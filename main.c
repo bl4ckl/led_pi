@@ -9,24 +9,26 @@
 
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <stdint.h>
+#include <signal.h>
 
 //MAC ID
-unsigned char id[13];
+static unsigned char id[13];
 
 //SPI
 #define CHANNEL 0
 #define SPI_SPEED 12000000
-int spifd;
+static int spifd;
 
 //Tcp connection
-unsigned int server_ip;
-int tcpsockfd;
+static unsigned int server_ip;
+static int tcpsockfd;
 
 //DATA
-entity _entity;
+static entity volatile *_entity;
 
 struct ledmessage {
         uint8_t         messageID;
@@ -63,14 +65,14 @@ void TcpHandler(int signalType)
         //printf("Send ID.\n");
     }
     else if(message.messageID == MESSAGE_CONFIG) {
-	if (entity_write_config(&_entity, message.data)<0) {
+	if (entity_write_config((entity*)_entity, message.data)<0) {
 		printf("entity_write_config() failed.");
 	} else {
 		printf("entity_write_config() succesfull.");
 	}
     }
     else if(message.messageID == MESSAGE_EFFECTS) {
-	if (entity_write_effects(&_entity, message.data)<0) {
+	if (entity_write_effects((entity*)_entity, message.data)<0) {
 		printf("entity_write_effect() failed.");
 	} else {
 		printf("entity_write_effect() succesfull.");
@@ -96,7 +98,18 @@ void TcpHandler(int signalType)
     }
 }
 
+void intHandler(int signalType) {
+	entity_free((entity*)_entity);
+	free((void*)_entity);
+}
+
 void ledtest() {
+	//Setup ctrl+c handler
+	signal(SIGINT, intHandler);
+
+	//Setup entity
+	_entity = malloc(sizeof(entity));
+
 	//Setup SPI
 	spi_setup(&spifd, CHANNEL, SPI_SPEED);
 
