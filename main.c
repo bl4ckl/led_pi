@@ -25,6 +25,9 @@ int spifd;
 unsigned int server_ip;
 int tcpsockfd;
 
+//DATA
+entity _entity;
+
 struct ledmessage {
         uint8_t         messageID;
         uint32_t        dataLength;
@@ -60,10 +63,18 @@ void TcpHandler(int signalType)
         //printf("Send ID.\n");
     }
     else if(message.messageID == MESSAGE_CONFIG) {
-
+	if (entity_write_config(&_entity, message.data)<0) {
+		printf("entity_write_config() failed.");
+	} else {
+		printf("entity_write_config() succesfull.");
+	}
     }
     else if(message.messageID == MESSAGE_EFFECTS) {
-
+	if (entity_write_effects(&_entity, message.data)<0) {
+		printf("entity_write_effect() failed.");
+	} else {
+		printf("entity_write_effect() succesfull.");
+	}
     }
     else if(message.messageID == MESSAGE_TIME) {
 
@@ -75,6 +86,12 @@ void TcpHandler(int signalType)
 
     }
     else if(message.messageID == MESSAGE_PREVIEW) {
+
+    }
+    else if(message.messageID == MESSAGE_SHOW) {
+
+    }
+    else if(message.messageID == MESSAGE_COLOR) {
 
     }
 }
@@ -90,8 +107,8 @@ void ledtest() {
 
 	unsigned char a, b, g, r;
 	a = 0xFF;
-	b = 0x00;
-	g = 0x78;
+	b = 0xFF;
+	g = 0xFF;
 	r = 0xFF;
 
 	for(int i = 0; i < 72; i++) {
@@ -110,7 +127,7 @@ int main() {
 	printf("ID: %s.\n", id);
 
 	//Test LED
-	ledtest();
+//	ledtest();
 
 	//Get the server ip
 	udpclientstart(&server_ip, SERVER_PORT);

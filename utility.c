@@ -22,6 +22,6 @@ void get_mac(char* __iface, unsigned char __mac_str[13])
     strcpy(ifr.ifr_name, __iface);
     ioctl(s, SIOCGIFHWADDR, &ifr);
     for (i=0; i<HWADDR_len; i++)
-        sprintf(&__mac_str[i*2],"%02X",((unsigned char*)ifr.ifr_hwaddr.sa_data)[i]);
+        sprintf((char*)&__mac_str[i*2],"%02X",((unsigned char*)ifr.ifr_hwaddr.sa_data)[i]);
     __mac_str[12]='\0';
 }

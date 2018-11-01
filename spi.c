@@ -9,6 +9,6 @@ int spi_setup(int* __spifd, int __channel, uint32_t __speed) {
         return 0;
 }
 
-int spi_write(int __channel, char* __data, int __length) {
+int spi_write(int __channel,unsigned char* __data, int __length) {
         return wiringPiSPIDataRW(__channel, __data, __length);
 }

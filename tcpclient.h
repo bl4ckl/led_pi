@@ -9,6 +9,7 @@
 #define MESSAGE_PAUSE		5
 #define MESSAGE_PREVIEW		6
 #define MESSAGE_SHOW		7
+#define MESSAGE_COLOR		8
 
 extern int tcpcreatesocket(int* __tcpsockfd);
 

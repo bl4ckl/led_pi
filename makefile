@@ -12,3 +12,4 @@ prog: $(OBJ)
 .PHONY: clean
 clean:
 	rm -rf $(BIN) $(OBJ)
+	make
