@@ -20,11 +20,13 @@ int tcpcreatesocket(int* __tcpsockfd)
     int sockfd;
     if((sockfd  = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
-        perror("socket creation failed");
+        perror("tcpcreatesocket socket");
         return -1;
     }
 
     *__tcpsockfd = sockfd;
+
+	printf("tcp_create_socket successfull\n");
     return 0;
 }
 
@@ -35,29 +37,30 @@ int tcpsetuphandler(int __tcpsockfd, void* __handler_function)
 
     if (sigfillset(&handler.sa_mask) < 0)
     {
-	perror("sigfillset() failed.");
+	perror("tcpsetuphandler sigfillset");
 	return -1;
     }
     handler.sa_flags = 0;
 
     if (sigaction(SIGIO, &handler, 0) < 0)
     {
-	perror("sigaction() failed.");
+	perror("tcpsetuphandler sigaction");
 	return -1;
     }
 
     if (fcntl(__tcpsockfd, F_SETOWN, getpid()) < 0)
     {
-	perror("fcntl() 1 failed.");
+	perror("tcpsetuphandler fcntl");
 	return -1;
     }
 
     if (fcntl(__tcpsockfd, F_SETFL, O_NONBLOCK | FASYNC) <0)
     {
-	perror("fcntl() 2 failed.");
+	perror("tcpsetuphandler fcntl");
 	return -1;
     }
 
+	printf("tcp_setup_handler successfull\n");
     return 0;
 }
 
@@ -74,10 +77,11 @@ int tcpclientstart(int __tcpsockfd, int __server_ip, int __server_port) {
 
     if(connect(__tcpsockfd, (const struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0)
     {
-        perror("connect() failed.");
-        //exit(EXIT_FAILURE);
+        perror("tcp_client_start connect");
+        return -1;
     }
 
+	printf("tcp_client_start successfull\n");
     return 0;
 }
 

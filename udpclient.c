@@ -49,32 +49,37 @@ int udpclientstart(unsigned int* __server_ip, int __server_port) {
     int broadcastEnable = 1;
     setsockopt(socketFileDescriptor, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
 
-    sendto(socketFileDescriptor, (const char *)broadcastMessage, strlen(broadcastMessage), MSG_CONFIRM, (const struct sockaddr *)&broadcastAddress, sizeof(broadcastAddress));
+	while(1)
+	{
+    		sendto(socketFileDescriptor, (const char *)broadcastMessage, strlen(broadcastMessage), MSG_CONFIRM, (const struct sockaddr *)&broadcastAddress, sizeof(broadcastAddress));
+		printf("broadcast sent\n");
 
-    while(1)
-    {
-        int message;
-        socklen_t serverAddressLength = sizeof(serverAddressLength);
-        message = recvfrom(socketFileDescriptor, (char *)buffer, 1024, MSG_WAITALL, (struct sockaddr*)&serverAddress, &serverAddressLength);
-        buffer[message] = '\0';
-        //printf("Server said: %s\n", buffer);
+	        int message;
+        	socklen_t serverAddressLength = sizeof(serverAddressLength);
+		printf("waiting for answer\n");
+	        message = recvfrom(socketFileDescriptor, (char *)buffer, 1024, MSG_WAITALL, (struct sockaddr*)&serverAddress, &serverAddressLength);
+	        buffer[message] = '\0';
+		printf("answer received: %s\n", buffer);
+	        if(message >= sizeof(desiredAnswer))
+	        {
+			int length = strlen(desiredAnswer);
+		        char bufferAnswer[length+1];
+        		memcpy((void*)&bufferAnswer[0], (void*)&buffer[0], length);
+			bufferAnswer[length]='\0';
+			printf("stripped answer: %s\n", bufferAnswer);
 
-        if(message >= sizeof(desiredAnswer))
-        {
-            char bufferAnswer[sizeof(desiredAnswer)];
-            memcpy((void*)&bufferAnswer, (void*)&buffer, sizeof(desiredAnswer)-1);
-            if(strcmp(desiredAnswer, bufferAnswer) == 0)
-            {
-                char ip[message-(sizeof(bufferAnswer)-1)];
-                memcpy((void*)&ip, (void*)&buffer[sizeof(desiredAnswer)-1], message - (sizeof(bufferAnswer)-1));
-                ip[sizeof(ip)] = '\0';
-                printf("Server found at %s.\n", &ip[0]);
-	   	*__server_ip = ipv4AddressToInt((char *)&ip);
-                break;
-            }
-        }
-    }
+            		if(strcmp(desiredAnswer, bufferAnswer) == 0)
+            		{
+                		char ip[message-(sizeof(bufferAnswer)-1)];
+		                memcpy((void*)&ip, (void*)&buffer[sizeof(desiredAnswer)-1], message - (sizeof(bufferAnswer)-1));
+                		ip[sizeof(ip)] = '\0';
+		                printf("server found at %s.\n", &ip[0]);
+			   	*__server_ip = ipv4AddressToInt((char *)&ip);
+                		break;
+		        }
+        	}
+    	}
 
-    close(socketFileDescriptor);
-    return 0;
+    	close(socketFileDescriptor);
+    	return 0;
 }
