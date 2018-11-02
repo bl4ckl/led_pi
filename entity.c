@@ -1,9 +1,13 @@
 /*  INCLUDES MAIN */
 #include "entity.h"
+#include "spi.h"
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <signal.h>
+#include <time.h>
 
 //Maybe do all this shit with malloc, idk right now
 //Edit: Malloc that shit
@@ -104,6 +108,8 @@ int entity_write_effects(entity* __entity, char* __data) {
 
 	__entity->fps = (uint8_t)__data[readBytes];
 	readBytes++;
+
+	__entity->nsec = (long)(1000000000/__entity->fps);
 
 	__entity->num_second = (uint16_t)(__entity->num_frame / __entity->fps);
 
@@ -214,6 +220,88 @@ int entity_free(entity* __entity) {
 		printf("free_effect() failed.");
 		return -1;
 	}
+
+	return 0;
+}
+
+int entity_setup_play_handler(void* __handler) {
+	struct sigaction act;
+	memset(&act, 0, sizeof(act));
+
+	act.sa_handler = __handler;
+	if (sigaction(SIGALRM, &act, NULL)<0) {
+		perror("entity_setup_play_handler sigaction()");
+		return -1;
+	}
+
+	return 0;
+}
+
+int entity_setup_timer(timer_t* __timer_id) {
+	if(timer_create(CLOCK_REALTIME, NULL, __timer_id)) {
+		perror("entity_setup_timer timer_create");
+		return -1;
+	}
+
+	return 0;
+}
+
+int entity_play(entity* __entity, timer_t* __timer_id, struct itimerspec* __it_spec) {
+	memset(__it_spec, 0, sizeof(struct itimerspec));
+
+	__it_spec->it_value.tv_nsec = __entity->nsec;
+	__it_spec->it_interval = __it_spec->it_value;
+
+	if(timer_settime(__timer_id, 0, __it_spec, NULL)<0) {
+		perror("entity_play timer_settime");
+		return -1;
+	}
+
+	return 0;
+}
+
+int entity_stop(timer_t* __timer_id) {
+	struct itimerspec it_spec;
+	memset((void*)&it_spec, 0, sizeof(it_spec));
+
+	if(timer_settime(__timer_id, 0, &it_spec, NULL)<0) {
+		perror("entity_stop timer_settime");
+		return -1;
+	}
+//	if(timer_delete(__timer_id)<0) {
+//		perror("entity_stop timer_delete");
+//		return -1;
+//	}
+
+	return 0;
+}
+
+int entity_full(entity* __entity, unsigned char color[4]) {
+        if((__entity == NULL) | (__entity->bus == NULL)) {
+                char data[2006];
+                memset(&data[0], 0, 6);
+		for(int i=0; i<sizeof(data)-6; i++) {
+	                memset(&data[6+i], 0b11100000 | color[0]>>3, 1);
+	                memset(&data[7+i], color[1], 1);
+	                memset(&data[8+i], color[2], 1);
+	                memset(&data[9+i], color[3], 1);
+		}
+		for(int i=0; i<8;i++) {
+	                spi_write(i, &data[0], sizeof(data));
+		}
+        } else {
+                for(int i=0;i<__entity->num_bus;i++) {
+                        char data[__entity->bus[i].size_spi_write_out];
+                        memset(&data[0], 0, 6);
+           		for(int j=0; j<sizeof(data)-6; j++) {
+		                memset(&data[6+j], color[0], 1);
+		                memset(&data[7+j], color[1], 1);
+	        	        memset(&data[8+j], color[2], 1);
+	                	memset(&data[9+j], color[3], 1);
+			}
+                        spi_write(__entity->bus[i].bus_id, &data[0], sizeof(data));
+                }
+        }
 
 	return 0;
 }

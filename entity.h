@@ -2,6 +2,7 @@
 #define ENTITY_H
 
 #include <stdint.h>
+#include <time.h>
 
 #define ENTITY_BYTES_START_LED 6
 #define ENTITY_BYTES_PER_LED 4
@@ -67,6 +68,8 @@ typedef struct {
         uint16_t        num_second;
 	//frames per second
 	uint8_t		fps;
+	//timer intervall in nano sec
+	long		nsec;
 	//total number of frames
         uint16_t        num_frame;
         entity_frame*   frame;
@@ -79,5 +82,11 @@ int entity_write_effects(entity* __entity, char* __data);
 int entity_free_config(entity* __entity);
 int entity_free_effect(entity* __entity);
 int entity_free(entity* __entity);
+
+int entity_setup_play_handler(void* __handler);
+int entity_setup_timer(timer_t* __timer_id);
+int entity_play(entity* __entity, timer_t* __timer_id, struct itimerspec* __it_spec);
+int entity_stop(timer_t* __timer_id);
+int entity_full(entity* __entity, unsigned char color[4]);
 
 #endif /* LED_H */

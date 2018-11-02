@@ -13,7 +13,9 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <stdint.h>
+
 #include <signal.h>
+#include <time.h>
 
 //MAC ID
 static unsigned char id[13];
@@ -26,97 +28,90 @@ static int spifd;
 //Tcp connection
 static unsigned int server_ip;
 static int tcpsockfd;
+static char volatile buffer[1024];
+static struct ledmessage volatile message;
+
+//Timer
+static timer_t volatile* it_id;
+static struct itimerspec volatile* it_spec;
+static long volatile current_frame;
 
 //DATA
 static entity volatile *_entity;
 
-struct ledmessage {
-        uint8_t         messageID;
-        uint32_t        dataLength;
-        uint32_t        dataReceived;
-        char *          data;
-};
+//Test
+#define LEDS 77
+static unsigned char volatile data[LEDS*4+6];
 
 void TcpHandler(int signalType)
 {
-    struct ledmessage message;
-    memset(&message, 0, sizeof(message));
+	memset((void*)&message, 0, sizeof(message));
+	memset((void*)&buffer, 0, sizeof(buffer));
 
-    char buffer[1024];
-    //printf("receiving data\n");
-    message.dataReceived = recv(tcpsockfd, (char *)buffer, 1024, 0);
-    //printf("ending data\n");
-    buffer[message.dataReceived] = '\0';
-    //printf("get message id\n");
-    message.messageID  = *buffer;
-    message.dataLength = buffer[1];
-    message.data = &buffer[3];
+	//printf("receiving data\n");
+	message.dataReceived = recv(tcpsockfd, (char*)buffer, 1024, 0);
+	//printf("ending data\n");
+	buffer[message.dataReceived] = '\0';
+	//printf("get message id\n");
+	message.messageID  = *buffer;
+	message.dataLength = buffer[1];
+	message.data = (char*)&buffer[3];
 
-    printf("tcpclient received message with id %d\n", message.messageID);
+	printf("tcpclient received message with id %d\n", message.messageID);
 
-    if(message.messageID == MESSAGE_ID) {
-        char sendBuf[15];
-        memset(&sendBuf, 0, sizeof(sendBuf));
-        uint16_t sizeOfBuf = 12;
-        memcpy(&sendBuf[1], &sizeOfBuf, sizeof(sizeOfBuf));
-        memcpy(&sendBuf[3], &id, sizeof(id)-1);
-        send(tcpsockfd, sendBuf, sizeof(sendBuf), 0);
+	if(message.messageID == MESSAGE_ID) {
+        	char sendBuf[15];
+        	memset(&sendBuf, 0, sizeof(sendBuf));
+	        uint16_t sizeOfBuf = 12;
+	        memcpy(&sendBuf[1], &sizeOfBuf, sizeof(sizeOfBuf));
+	        memcpy(&sendBuf[3], &id, sizeof(id)-1);
+	        send(tcpsockfd, sendBuf, sizeof(sendBuf), 0);
 
-        //printf("Send ID.\n");
-    }
-    else if(message.messageID == MESSAGE_CONFIG) {
-	if (entity_write_config((entity*)_entity, message.data)<0) {
-		printf("entity_write_config() failed.");
-	} else {
-		printf("entity_write_config() succesfull.");
+        	//printf("Send ID.\n");
 	}
-    }
-    else if(message.messageID == MESSAGE_EFFECTS) {
-	if (entity_write_effects((entity*)_entity, message.data)<0) {
-		printf("entity_write_effect() failed.");
-	} else {
-		printf("entity_write_effect() succesfull.");
+    	else if(message.messageID == MESSAGE_CONFIG) {
+		if (entity_write_config((entity*)_entity, message.data)<0) {
+			printf("entity_write_config() failed.");
+		} else {
+			printf("entity_write_config() succesfull.");
+		}
+    	}
+    	else if(message.messageID == MESSAGE_EFFECTS) {
+		if (entity_write_effects((entity*)_entity, message.data)<0) {
+			printf("entity_write_effect() failed.");
+		} else {
+			printf("entity_write_effect() succesfull.");
+		}
 	}
-    }
-    else if(message.messageID == MESSAGE_TIME) {
+	else if(message.messageID == MESSAGE_TIME) {
+	}
+	else if(message.messageID == MESSAGE_PLAY) {
+		entity_play((entity*)_entity, (timer_t*)it_id, (struct itimerspec*)it_spec);
+	}
+	else if(message.messageID == MESSAGE_PAUSE) {
+		entity_stop((timer_t*)it_id);
+		unsigned char color[4];
+		memset(&color[0], 0, 4);
+		entity_full((entity*)_entity, color);
+	}
+	else if(message.messageID == MESSAGE_PREVIEW) {
+	}
+	else if(message.messageID == MESSAGE_SHOW) {
+		unsigned char color[4];
+		memset(&color[0], 0xFF, 4);
+		entity_full((entity*)_entity, color);
 
-    }
-    else if(message.messageID == MESSAGE_PLAY) {
-
-    }
-    else if(message.messageID == MESSAGE_PAUSE) {
-
-    }
-    else if(message.messageID == MESSAGE_PREVIEW) {
-
-    }
-    else if(message.messageID == MESSAGE_SHOW) {
-
-    }
-    else if(message.messageID == MESSAGE_COLOR) {
-
-    }
+	}
+	else if(message.messageID == MESSAGE_COLOR) {
+	}
 }
 
-void intHandler(int signalType) {
-	entity_free((entity*)_entity);
-	free((void*)_entity);
-}
+void fire_new_frame(long __current_frame, entity* __entity) {
+//	for(int i = 0; i<__entity->num_bus; i++) {
+//		spi_write(CHANNEL, __entity->bus[i].spi_write_out, __entity->bus[i].size_spi_write_out);
+//	}
 
-void ledtest() {
-	//Setup ctrl+c handler
-	signal(SIGINT, intHandler);
-
-	//Setup entity
-	_entity = malloc(sizeof(entity));
-
-	//Setup SPI
-	spi_setup(&spifd, CHANNEL, SPI_SPEED);
-
-	//Test leds
-	unsigned char data[6+4*72];
-	memset(&data[0], 0, 4);
-//	memset(&data[sizeof(data)-5], 255, 4);
+	memset((void*)&data[0], 0, sizeof(data));
 
 	unsigned char a, b, g, r;
 	a = 0xFF;
@@ -124,17 +119,72 @@ void ledtest() {
 	g = 0xFF;
 	r = 0xFF;
 
-	for(int i = 0; i < 72; i++) {
-		data[4+i*4] = a;
-		data[5+i*4] = b;
-		data[6+i*4] = g;
-		data[7+i*4] = r;
+	for(int i = 0; i < LEDS; i++) {
+		if(i == __current_frame%LEDS)
+		{
+			data[4+i*4] = a;
+			data[5+i*4] = b;
+			data[6+i*4] = g;
+			data[7+i*4] = r;
+		}
+		else
+		{
+			data[4+i*4] = 0b11100000;
+		}
 	}
 
-	spi_write(CHANNEL, &data[0], sizeof(data));
+	printf("%d, %d\n", __current_frame, __current_frame%LEDS);
+
+	spi_write(CHANNEL, (unsigned char*)&data[0], sizeof(data));
 }
 
-int main() {
+void playHandler(int signalType) {
+	long temp = ++current_frame;
+	fire_new_frame(temp, (entity*)_entity);
+}
+
+void intHandler(int signalType) {
+	cleanup();
+	exit(1);
+}
+
+void cleanup() {
+//	printf("Freeing entity.\n");
+	entity_free((entity*)_entity);
+	free((void*)_entity);
+//	printf("Freeing it_id.\n");
+	free((void*)it_id);
+//	printf("Freeing it_spec.\n");
+	free((void*)it_spec);
+}
+
+int init() {
+	//Setup ctrl+c handler
+	struct sigaction act;
+	memset(&act, 0, sizeof(act));
+
+	act.sa_handler = intHandler;
+	if (sigaction(SIGINT, &act, NULL)<0) {
+		perror("init sigaction");
+		return -1;
+	}
+
+	//Setup various datas
+	_entity = malloc(sizeof(entity));
+	//current_frame = malloc(sizeof(long));
+
+	_entity->nsec=25000000;
+
+	it_id = malloc(sizeof(timer_t));
+	it_spec = malloc(sizeof(struct itimerspec));
+
+	//Setup Timer
+	entity_setup_timer((timer_t*)it_id);
+	entity_setup_play_handler(playHandler);
+
+	//Setup SPI
+	spi_setup(&spifd, CHANNEL, SPI_SPEED);
+
 	//At first get the ID
 	get_mac("wlan0", id);
 	printf("ID: %s.\n", id);
@@ -150,6 +200,14 @@ int main() {
 	tcpsetuphandler(tcpsockfd, TcpHandler);
 	tcpclientstart(tcpsockfd, server_ip, SERVER_PORT);
 
+	return 0;
+}
+
+int main() {
+	init();
+
 	//Wait for messages
 	for(;;);
+
+	cleanup();
 }
