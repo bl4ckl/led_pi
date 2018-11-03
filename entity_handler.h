@@ -29,7 +29,7 @@ typedef struct {
 }entity_handler_args_t;
 
 int entity_handler_init();
-int entity_handler_args_init(entity_handler_args_t* __args, entity_bus_t* __bus);
+int entity_handler_args_init(entity_handler_args_t* __args, entity_bus_t* __bus, uint8_t __fps);
 int entity_handler_args_destroy(entity_handler_args_t* __args);
 void* entity_handler(void* __args);
 

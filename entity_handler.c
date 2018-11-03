@@ -20,7 +20,7 @@ int entity_handler_init() {
 	return 0;
 }
 
-int entity_handler_args_init(entity_handler_args_t* __args, entity_bus_t* __bus) {
+int entity_handler_args_init(entity_handler_args_t* __args, entity_bus_t* __bus, uint8_t __fps) {
 	memset(__args, 0, sizeof(entity_handler_args_t));
 
 	if(pthread_mutex_init(&(__args->mutex), NULL)<0) {
@@ -34,6 +34,7 @@ int entity_handler_args_init(entity_handler_args_t* __args, entity_bus_t* __bus)
 	}
 
 	__args->entity_bus_t = __bus;
+	__args->fps = __fps;
 
 	return 0;
 }
