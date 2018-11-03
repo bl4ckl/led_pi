@@ -19,7 +19,7 @@ static pthread_t tcp_thread;
 
 static entity_handler_args_t* entity_handler_args;
 
-static pthread_mutex_tcp_exit_mutex;
+static pthread_mutex tcp_exit_mutex;
 static bool tcp_exit_issued = false;
 
 int threads_init((void*) __clean_add) {
