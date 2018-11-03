@@ -26,7 +26,7 @@ void get_mac(char* __iface, unsigned char __mac_str[13])
     __mac_str[12]='\0';
 }
 
-void print_bits(size_t const size, void const * const ptr)
+void print_bits(size_t const  size, void const * const ptr)
 {
     unsigned char *b = (unsigned char*) ptr;
     unsigned char byte;
