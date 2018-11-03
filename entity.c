@@ -8,11 +8,12 @@
 #include <stdio.h>
 #include <signal.h>
 #include <time.h>
+#include <pthread.h>
 
 //Maybe do all this shit with malloc, idk right now
 //Edit: Malloc that shit
 
-int entity_write_config(entity* __entity, char* __data) {
+int entity_write_config(entity_t* __entity, char* __data) {
 	entity_free(__entity);
 
 	int readBytes = 0;
@@ -20,13 +21,18 @@ int entity_write_config(entity* __entity, char* __data) {
 	readBytes += 2;
 
 	//Allocate the memory for all busses
-	if((__entity->bus = (entity_bus*)malloc(sizeof(entity_bus) * __entity->num_bus))==NULL) {
-		printf("allocating memory for busses failed.");
+	if((__entity->bus = (entity_bus_t*)malloc(sizeof(entity_bus_t) * __entity->num_bus))==NULL) {
+		perror("entity_write_config malloc __entity->bus");
 		return -1;
 	}
 	uint16_t num_led_bus;
 
 	for(int i=0; i<(__entity->num_bus); i++) {
+		if(pthread_mutex_init(&(__entity->bus[i].mutex), NULL)<0) {
+			perror("entity_write_config pthread_mutex_init");
+			return -1;
+		}
+
 		__entity->bus[i].bus_id = (uint8_t)__data[readBytes];
 		readBytes++;
 
@@ -34,7 +40,7 @@ int entity_write_config(entity* __entity, char* __data) {
 		readBytes += 2;
 
 		//Allocate the memory for all groups
-		if((__entity->bus[i].group = (entity_group*)malloc(sizeof(entity_group) * __entity->bus[i].num_group))==NULL) {
+		if((__entity->bus[i].group = (entity_group_t*)malloc(sizeof(entity_group_t)*__entity->bus[i].num_group))==NULL) {
 			printf("allocating memory for groups failed.");
 			return -1;
 		}
@@ -64,7 +70,7 @@ int entity_write_config(entity* __entity, char* __data) {
 		__entity->bus[i].size_spi_write_out = ENTITY_BYTES_START_LED + __entity->bus[i].num_led * ENTITY_BYTES_PER_LED;
 
 		//Allocate the memory for all seconds (full images)
-		if((__entity->bus[i].second = (entity_second*)malloc(__entity->bus[i].size_spi_write_out * __entity->num_second))==NULL) {
+		if((__entity->bus[i].second = (entity_second_t*)malloc(__entity->bus[i].size_spi_write_out * __entity->num_second))==NULL) {
 			printf("allocating memory for seconds (full images) failed.");
 			return -1;
 		}
@@ -80,10 +86,13 @@ int entity_write_config(entity* __entity, char* __data) {
 	return 0;
 }
 
-int entity_free_config(entity* __entity) {
+int entity_free_config(entity_t* __entity) {
 	for(int i=0; i<(__entity->num_bus); i++) {
 		for(int j=0; j<(__entity->bus[i].num_group); j++) {
 			free(__entity->bus[i].group[j].led_offset);
+		}
+		if(pthread_mutex_destroy(&(__entity->bus[i].mutex))<0) {
+			perror("entity_free_config pthread_mutex_destroy");
 		}
 
 		free(__entity->bus[i].group);
@@ -99,7 +108,7 @@ int entity_free_config(entity* __entity) {
 	return 0;
 }
 
-int entity_write_effects(entity* __entity, char* __data) {
+int entity_write_effects(entity_t* __entity, char* __data) {
 	entity_free_effect(__entity);
 
 	int readBytes = 0;
@@ -113,6 +122,7 @@ int entity_write_effects(entity* __entity, char* __data) {
 
 	__entity->num_second = (uint16_t)(__entity->num_frame / __entity->fps);
 
+	//At first write out the full seconds in the corresponding bus
 	for(int i=0; i<(__entity->num_second); i++) {
 		uint8_t bus_id = (uint8_t)__data[readBytes];
 		readBytes++;
@@ -138,55 +148,70 @@ int entity_write_effects(entity* __entity, char* __data) {
 		}
 	}
 
-	uint16_t frame_count = (uint16_t)__data[readBytes];
-	readBytes += 2;
+	//Allocate space for all frames in all busses
+	for(int i=0; i<__entity->num_bus; i++) {
+		if((__entity->bus[i].frame=(entity_frame_t*)malloc(sizeof(entity_frame_t)*__entity->num_frame))<0) {
+			perror("entity_write_effect malloc frame");
+			return -1;
+		}
+		if(memset(__entity->bus[i].frame, 0, sizeof(entity_frame_t)*__entity->num_frame)<0) {
+			perror("entity_write_effect, memset frame");
+			return -1;
+		}
+	}
 
-	for(int i=0; i<frame_count; i++) {
-		uint16_t frame_id = (uint16_t)__data[readBytes];
+	//Loop over all frames
+	for(int i=0; i<__entity->num_frame; i++) {
+		//Read the changes of the current frame
+		uint16_t num_changes = (uint16_t)__data[readBytes];
 		readBytes += 2;
 
-		for(int j=0; j<(__entity->num_frame); j++) {
-			if(frame_id==j) {
-				__entity->frame[j].num_change = (uint16_t)__data[readBytes];
+		if(num_changes>0) {
+			//Loop over all changes in this frame
+			for(int j=0; j<num_changes; j++) {
+				//Read values of current change
+				uint8_t bus_id = (uint8_t)__data[readBytes];
+				readBytes++;
+				uint8_t group_id = (uint8_t)__data[readBytes];
+				readBytes++;
+				uint16_t led_id = (uint16_t)__data[readBytes];
 				readBytes += 2;
 
-				//Allocate the memory for the spi_write_out[]
-				if((__entity->frame[j].change = (entity_change*)malloc(__entity->frame[j].num_change * sizeof(entity_change)))==NULL) {
-					printf("allocating memory for led change failed.");
-					return -1;
-				}
+				//Loop over all busses
+				for(int k=0; k<__entity->num_bus; k++) {
+					if(__entity->bus[k].bus_id==bus_id) {
+						//Increment the number of changes in this bus in the current frame
+						__entity->bus[k].frame[i].num_change++;
 
-				for(int k=0; k<(__entity->frame[j].num_change); k++) {
-					uint8_t bus_id = (uint8_t)__data[readBytes];
-					readBytes++;
-
-					uint8_t bus_index;
-					for(int m=0; m<(__entity->num_bus); m++) {
-						if(__entity->bus[m].bus_id==bus_id) {
-							bus_index = m;
-							__entity->frame[j].change[k].bus_index = m;
-							break;
+						//Get heap space for changes
+						//If already allocate realloc, else just allocate one
+						if(__entity->bus[k].frame[i].change!=NULL) {
+							if((__entity->bus[k].frame[i].change=(entity_change_t*)realloc(__entity->bus[k].frame, sizeof(entity_change_t)*__entity->bus[k].frame[i].num_change))<0) {
+								perror("entity_write_effect realloc");
+								return -1;
+							}
+						} else {
+							if((__entity->bus[k].frame[i].change=(entity_change_t*)malloc(sizeof(entity_change_t)))<0) {
+								perror("entity_write_effect malloc");
+								return -1;
+							}
 						}
-					}
 
-					uint8_t group_id = (uint8_t)__data[readBytes];
-					readBytes++;
-
-					uint16_t led_id = (uint16_t)__data[readBytes];
-					readBytes += 2;
-					for(int m=0; m<(__entity->bus[bus_index].num_group); m++) {
-						if(__entity->bus[bus_index].group[m].group_id==group_id) {
-							__entity->frame[j].change[k].led_offset = __entity->bus[bus_index].group[m].led_offset[led_id];
-							break;
+						//Loop over all groups
+						for(int m=0; m<__entity->bus[k].num_group; m++) {
+							if(__entity->bus[k].group[m].group_id==group_id) {
+								//Save led_offset
+								uint16_t offset = __entity->bus[k].group[m].led_offset[led_id];
+								__entity->bus[k].frame[i].change[__entity->bus[k].frame[i].num_change-1].led_offset = offset;
+								//Save color
+								memcpy(&(__entity->bus[k].frame[i].change[__entity->bus[k].frame[i].num_change-1].color[0]), &__data[readBytes], 4);
+								readBytes += 4;
+								break;
+							}
 						}
+						break;
 					}
-
-					memcpy((void*)&(__entity->frame[j].change[k].color[0]), (void*)&__data[readBytes], 4);
-					readBytes += 4;
 				}
-			} else {
-				__entity->frame[j].num_change = 0;
-				__entity->frame[j].change = NULL;
 			}
 		}
 	}
@@ -194,13 +219,15 @@ int entity_write_effects(entity* __entity, char* __data) {
 	return 0;
 }
 
-int entity_free_effect(entity* __entity) {
-	for(int i=0; i<(__entity->num_frame); i++) {
-		free(__entity->frame[i].change);
+int entity_free_effect(entity_t* __entity) {
+	for(int i=0; i<__entity->num_bus; i++) {
+		for(int j=0; j<__entity->num_frame; j++) {
+			free(__entity->bus[i].frame[j].change);
+		}
+		free(__entity->bus[i].frame);
+		__entity->bus[i].frame = NULL;
+		memset(__entity->bus[i].second, 0, __entity->bus[i].size_spi_write_out);
 	}
-
-	free(__entity->frame);
-	__entity->frame = NULL;
 
 	memset(&(__entity->num_second), 0, sizeof(__entity->num_second));
 	memset(&(__entity->fps), 0, sizeof(__entity->fps));
@@ -209,7 +236,7 @@ int entity_free_effect(entity* __entity) {
 	return 0;
 }
 
-int entity_free(entity* __entity) {
+int entity_free(entity_t* __entity) {
 
 	if(entity_free_config(__entity)<0) {
 		printf("free_config() failed.");
@@ -246,7 +273,7 @@ int entity_setup_timer(timer_t* __timer_id) {
 	return 0;
 }
 
-int entity_play(entity* __entity, timer_t* __timer_id, struct itimerspec* __it_spec) {
+int entity_play(entity_t* __entity, timer_t* __timer_id, struct itimerspec* __it_spec) {
 	memset(__it_spec, 0, sizeof(struct itimerspec));
 
 	__it_spec->it_value.tv_nsec = __entity->nsec;
@@ -276,9 +303,9 @@ int entity_stop(timer_t* __timer_id) {
 	return 0;
 }
 
-int entity_full(entity* __entity, unsigned char color[4]) {
+int entity_full(entity_t* __entity, unsigned char color[4]) {
         if((__entity == NULL) | (__entity->bus == NULL)) {
-                char data[2006];
+                unsigned char data[2006];
                 memset(&data[0], 0, 6);
 		for(int i=0; i<sizeof(data)-6; i++) {
 	                memset(&data[6+i], 0b11100000 | color[0]>>3, 1);
@@ -291,7 +318,7 @@ int entity_full(entity* __entity, unsigned char color[4]) {
 		}
         } else {
                 for(int i=0;i<__entity->num_bus;i++) {
-                        char data[__entity->bus[i].size_spi_write_out];
+                        unsigned char data[__entity->bus[i].size_spi_write_out];
                         memset(&data[0], 0, 6);
            		for(int j=0; j<sizeof(data)-6; j++) {
 		                memset(&data[6+j], color[0], 1);

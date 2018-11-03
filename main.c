@@ -37,7 +37,7 @@ static struct itimerspec volatile* it_spec;
 static long volatile current_frame;
 
 //DATA
-static entity volatile *_entity;
+static entity_t volatile* entity;
 
 //Test
 #define LEDS 77
@@ -60,7 +60,7 @@ void TcpHandler(int signalType)
 	printf("tcpclient received message with id %d\n", message.messageID);
 
 	switch(message.messageID) {
-		case MESSAGE_ID:
+		case MESSAGE_ID: {
 	        	char sendBuf[15];
         		memset(&sendBuf, 0, sizeof(sendBuf));
 		       	uint16_t sizeOfBuf = 12;
@@ -77,16 +77,16 @@ void TcpHandler(int signalType)
 			printf("Bits: \n");
 			print_bits(sizeof(sendBuf), &sendBuf[0]);
 			*/
-			break;
+			break; }
 		case MESSAGE_CONFIG:
-			if (entity_write_config((entity*)_entity, message.data)<0) {
+			if (entity_write_config((entity_t*)entity, message.data)<0) {
 				printf("entity_write_config() failed.");
 			} else {
 				printf("entity_write_config() succesfull.");
 			}
 			break;
 		case MESSAGE_EFFECTS:
-			if (entity_write_effects((entity*)_entity, message.data)<0) {
+			if (entity_write_effects((entity_t*)entity, message.data)<0) {
 				printf("entity_write_effect() failed.");
 			} else {
 				printf("entity_write_effect() succesfull.");
@@ -95,26 +95,27 @@ void TcpHandler(int signalType)
 		case MESSAGE_TIME:
 			break;
 		case MESSAGE_PLAY:
-			entity_play((entity*)_entity, (timer_t*)it_id, (struct itimerspec*)it_spec);
+			entity_play((entity_t*)entity, (timer_t*)it_id, (struct itimerspec*)it_spec);
 			break;
-		case MESSAGE_PAUSE:
+		case MESSAGE_PAUSE: {
 			entity_stop((timer_t*)it_id);
 			unsigned char color[4];
 			memset(&color[0], 0, 4);
-			entity_full((entity*)_entity, color);
-			break;
+			entity_full((entity_t*)entity, color);
+			break; }
 		case MESSAGE_PREVIEW:
 			break;
-		case MESSAGE_SHOW:
+		case MESSAGE_SHOW: {
 			unsigned char color[4];
 			memset(&color[0], 0xFF, 4);
-			entity_full((entity*)_entity, color);
-			break;
+			entity_full((entity_t*)entity, color);
+			break; }
 		case MESSAGE_COLOR:
 			break;
+	}
 }
 
-void fire_new_frame(long __current_frame, entity* __entity) {
+void fire_new_frame(long __current_frame, entity_t* __entity) {
 //	for(int i = 0; i<__entity->num_bus; i++) {
 //		spi_write(CHANNEL, __entity->bus[i].spi_write_out, __entity->bus[i].size_spi_write_out);
 //	}
@@ -141,14 +142,14 @@ void fire_new_frame(long __current_frame, entity* __entity) {
 		}
 	}
 
-	printf("%d, %d\n", __current_frame, __current_frame%LEDS);
+	printf("%d, %d\n", (int)__current_frame, (int)__current_frame%LEDS);
 
 	spi_write(CHANNEL, (unsigned char*)&data[0], sizeof(data));
 }
 
 void playHandler(int signalType) {
 	long temp = ++current_frame;
-	fire_new_frame(temp, (entity*)_entity);
+	fire_new_frame(temp, (entity_t*)entity);
 }
 
 void intHandler(int signalType) {
@@ -158,8 +159,8 @@ void intHandler(int signalType) {
 
 void cleanup() {
 //	printf("Freeing entity.\n");
-	entity_free((entity*)_entity);
-	free((void*)_entity);
+	entity_free((entity_t*)entity);
+	free((void*)entity);
 //	printf("Freeing it_id.\n");
 	free((void*)it_id);
 //	printf("Freeing it_spec.\n");
@@ -178,10 +179,10 @@ int init() {
 	}
 
 	//Setup various datas
-	_entity = malloc(sizeof(entity));
+	entity = malloc(sizeof(entity_t));
 	//current_frame = malloc(sizeof(long));
 
-	_entity->nsec=25000000;
+	entity->nsec=25000000;
 
 	it_id = malloc(sizeof(timer_t));
 	it_spec = malloc(sizeof(struct itimerspec));
