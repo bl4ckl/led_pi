@@ -59,51 +59,59 @@ void TcpHandler(int signalType)
 
 	printf("tcpclient received message with id %d\n", message.messageID);
 
-	if(message.messageID == MESSAGE_ID) {
-        	char sendBuf[15];
-        	memset(&sendBuf, 0, sizeof(sendBuf));
-	        uint16_t sizeOfBuf = 12;
-	        memcpy(&sendBuf[1], &sizeOfBuf, sizeof(sizeOfBuf));
-	        memcpy(&sendBuf[3], &id, sizeof(id)-1);
-	        send(tcpsockfd, sendBuf, sizeof(sendBuf), 0);
+	switch(message.messageID) {
+		case MESSAGE_ID:
+	        	char sendBuf[15];
+        		memset(&sendBuf, 0, sizeof(sendBuf));
+		       	uint16_t sizeOfBuf = 12;
+		        memcpy(&sendBuf[1], &sizeOfBuf, sizeof(sizeOfBuf));
+		        memcpy(&sendBuf[3], &id, sizeof(id)-1);
+		        send(tcpsockfd, sendBuf, sizeof(sendBuf), 0);
 
-        	//printf("Send ID.\n");
-	}
-    	else if(message.messageID == MESSAGE_CONFIG) {
-		if (entity_write_config((entity*)_entity, message.data)<0) {
-			printf("entity_write_config() failed.");
-		} else {
-			printf("entity_write_config() succesfull.");
-		}
-    	}
-    	else if(message.messageID == MESSAGE_EFFECTS) {
-		if (entity_write_effects((entity*)_entity, message.data)<0) {
-			printf("entity_write_effect() failed.");
-		} else {
-			printf("entity_write_effect() succesfull.");
-		}
-	}
-	else if(message.messageID == MESSAGE_TIME) {
-	}
-	else if(message.messageID == MESSAGE_PLAY) {
-		entity_play((entity*)_entity, (timer_t*)it_id, (struct itimerspec*)it_spec);
-	}
-	else if(message.messageID == MESSAGE_PAUSE) {
-		entity_stop((timer_t*)it_id);
-		unsigned char color[4];
-		memset(&color[0], 0, 4);
-		entity_full((entity*)_entity, color);
-	}
-	else if(message.messageID == MESSAGE_PREVIEW) {
-	}
-	else if(message.messageID == MESSAGE_SHOW) {
-		unsigned char color[4];
-		memset(&color[0], 0xFF, 4);
-		entity_full((entity*)_entity, color);
-
-	}
-	else if(message.messageID == MESSAGE_COLOR) {
-	}
+			// TESTING PURPOSE
+			/*
+			char test[16];
+			memcpy(&test[0], &sendBuf[0], 15);
+			test[15] = '\0';
+        		printf("Send ID: %s\n", &test[2]);
+			printf("Bits: \n");
+			print_bits(sizeof(sendBuf), &sendBuf[0]);
+			*/
+			break;
+		case MESSAGE_CONFIG:
+			if (entity_write_config((entity*)_entity, message.data)<0) {
+				printf("entity_write_config() failed.");
+			} else {
+				printf("entity_write_config() succesfull.");
+			}
+			break;
+		case MESSAGE_EFFECTS:
+			if (entity_write_effects((entity*)_entity, message.data)<0) {
+				printf("entity_write_effect() failed.");
+			} else {
+				printf("entity_write_effect() succesfull.");
+			}
+			break;
+		case MESSAGE_TIME:
+			break;
+		case MESSAGE_PLAY:
+			entity_play((entity*)_entity, (timer_t*)it_id, (struct itimerspec*)it_spec);
+			break;
+		case MESSAGE_PAUSE:
+			entity_stop((timer_t*)it_id);
+			unsigned char color[4];
+			memset(&color[0], 0, 4);
+			entity_full((entity*)_entity, color);
+			break;
+		case MESSAGE_PREVIEW:
+			break;
+		case MESSAGE_SHOW:
+			unsigned char color[4];
+			memset(&color[0], 0xFF, 4);
+			entity_full((entity*)_entity, color);
+			break;
+		case MESSAGE_COLOR:
+			break;
 }
 
 void fire_new_frame(long __current_frame, entity* __entity) {
