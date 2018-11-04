@@ -46,8 +46,6 @@ typedef struct {
 
 	//Ref to entity
 	entity_t*	entity;
-
-	char[13]	id;
 }tcp_handler_args_t;
 
 int tcp_handler_init();
