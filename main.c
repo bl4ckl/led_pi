@@ -2,7 +2,7 @@
 #include "tcpclient.h"
 #include "udpclient.h"
 
-#include "entity.h"
+#include "entity/entity.h"
 #include "spi.h"
 
 #include "utility.h"

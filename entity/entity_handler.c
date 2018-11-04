@@ -85,6 +85,8 @@ void* entity_handler(void* __args) {
 		write_spi(args);
 
 		pthread_mutex_unlock(args->bus->&mutex);
+
+		args->frame_update_completed = true;
 		pthread_mutex_unlock(args->&mutex);
 	}
 }

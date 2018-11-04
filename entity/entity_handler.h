@@ -18,11 +18,15 @@ typedef struct {
 	//If we want to exit, this becomes true
 	bool		thread_exit_issued;
 
+	//Check this to see if the thread is still running after
+	//issuing a frame update
+	bool		frame_update_completed;
+
 	//Need to update this before calling sem_post
 	long		last_frame;
 	long		current_frame;
 
-	//Referenz to the bus struct
+	//Ref to the bus struct
 	entity_bus_t*	bus;
 	//fps of the project
 	uint8_t		fps;
