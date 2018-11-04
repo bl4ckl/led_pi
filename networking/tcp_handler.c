@@ -1,12 +1,21 @@
-#include "tcphandler.h"
+#include "tcp_handler.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdint.h>
-#include <socket.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <pthread.h>
 #include <semaphore.h>
 
-static bool init = false;
+static int identify_message(tcp_handler_message_t* __message, char __buffer[1024]);
+static void reset_message(tcp_handler_message_t* __message, char __buffer[1024]);
+static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* __message);
+static void send_to_server(tcp_handler_args_t* __args, uint8_t __message_id, char* data);
+
+
+static bool init = true;
 
 int tcp_handler_init() {
 	init = true;
@@ -14,10 +23,10 @@ int tcp_handler_init() {
 }
 
 int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd,
-	void* __entity_timesync(long),
-	void* __entity_play(),
-	void* __entity_pause(),
-	void* __entity_show(),  entity_t* __entity) {
+	void (*__entity_timesync)(uint32_t),
+	void (*__entity_play)(void),
+	void (*__entity_pause)(void),
+	void (*__entity_show)(void),  entity_t* __entity) {
 
 	memset(__args, 0, sizeof(tcp_handler_args_t));
 
@@ -64,7 +73,7 @@ void* tcp_handler(void* __args) {
 	}
 
 	//get refs
-	tcp_handler_args* args = (tcp_handler_args*)__args;
+	tcp_handler_args_t* args = (tcp_handler_args_t*)__args;
 
 	//build data strucutre
 	tcp_handler_message_t message;
@@ -78,45 +87,63 @@ void* tcp_handler(void* __args) {
 	//start main loop
 	while(1) {
 		//Wait for signal from main_thread
-		sem_wait(__args->tcp_sem);
+		sem_wait(&args->tcp_sem);
 
 		//Lock arg mutex
 		pthread_mutex_lock(&(args->mutex));
 		//Check for exit issued
-		if(__args->thread_exit_issued) {
+		if(args->thread_exit_issued) {
 			pthread_mutex_unlock(&(args->mutex));
 			pthread_exit(NULL);
 		}
 
 		//Process the message
 		if(!message_identified) {
-		        message.total_data_received += recv(args->sockfd, &buffer[0], sizeof(buffer), 0);
-			if(identify_message(&message, &buffer[0])<0) {
-				perror("tcp_handler identify_message");
-				send_to_server(MESSAGE_RESEND);
+		        message.total_data_received = recv(args->sockfd, &buffer[0], sizeof(buffer), 0);
+			if(message.total_data_received > 0) {
+				if(identify_message(&message, &buffer[0])<0) {
+					perror("tcp_handler identify_message");
+				} else {
+					printf("tcp_handler:\tmessage identified:\n\t\tid: %d\n\t\ttotal_data_length: %d\n\t\ttotal_data_received: %d\n", message.id, message.total_data_length, message.total_data_received);
+					fflush(stdout);
+					message_identified = true;
+				}
+			} else {
+				perror("tcp_handler message recv < 0");
 			}
-			message_identified = true;
 		} else {
-			uint32_t data_received = recv(args->sockfd, &buffer[0], sizeof(buffer), 0);
-			memcpy(&message.data[message.total_data_received], &buffer[0], data_received);
-			memset(&buffer[0], 0, sizeof(buffer));
-		        message.total_data_received += data_received;
+			int32_t data_received = recv(args->sockfd, &buffer[0], sizeof(buffer), 0);
+			if(data_received < 0) {
+				perror("tcp_handler recv -1");
+				fflush(stdout);
+				reset_message(&message, &buffer[0]);
+				send_to_server(args, MESSAGE_RESEND, NULL);
+			} else {
+				memcpy(&message.data[message.total_data_received], &buffer[0], data_received);
+				memset(&buffer[0], 0, sizeof(buffer));
+		        	message.total_data_received += data_received;
+			}
 		}
 
 		if((message.id != MESSAGE_NULL) && (message.total_data_length == message.total_data_received)) {
 			handle_message(args, &message);
-			reset_message(&message);
-			send_to_server(MESSAGE_READY);
+			reset_message(&message, &buffer[0]);
+			message_identified = false;
+			send_to_server(args, MESSAGE_READY, NULL);
 		} else if(message.total_data_length < message.total_data_received) {
-			reset_message(&message);
-			send_to_server(MESSAGE_RESEND);
+			reset_message(&message, &buffer[0]);
+			message_identified = false;
+			send_to_server(args, MESSAGE_RESEND, NULL);
+		} else if(message.id == MESSAGE_NULL) {
+			reset_message(&message, &buffer[0]);
+			message_identified = false;
 		}
 
 		pthread_mutex_unlock(&(args->mutex));
 	}
 }
 
-static int identify_message(tcp_handler_message_t* __message, char* __buffer[1024]) {
+static int identify_message(tcp_handler_message_t* __message, char __buffer[1024]) {
 	//A message needs to be atleast 5 bytes
 	if(__message->total_data_received >= 5) {
 		//First byte represents message_id
@@ -127,21 +154,21 @@ static int identify_message(tcp_handler_message_t* __message, char* __buffer[102
 		__message->total_data_received -= 5;
 		//Malloc heap space for the rest of the data
 		if((__message->data=(char*)malloc(__message->total_data_length))==NULL) {
-			memset(__mesage, 0, sizeof(tcp_handler_message_t));
-			memset(&__buffer[0], 0, sizeof(__buffer));
+			reset_message(__message, &__buffer[0]);
 			perror("tcp_handler identify_message malloc");
 			return -1;
 		}
 		//Copy the received data from buffer
-		memcpy(__message->data, &__buffer[0], total_data_received);
+		memcpy(__message->data, &__buffer[5], __message->total_data_received);
 		//Reset the buffer again
-		memset(&__buffer[0], 0, sizeof(__buffer));
+		memset(&__buffer[0], 0, sizeof(*__buffer));
 	} else {
-		memset(__mesage, 0, sizeof(tcp_handler_message_t));
-		memset(&__buffer[0], 0, sizeof(__buffer));
+		reset_message(__message, &__buffer[0]);
 		perror("tcp_handler identify_message total_data_received < 5");
 		return -1;
 	}
+
+	return 0;
 }
 
 static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* __message) {
@@ -152,7 +179,7 @@ static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* _
 				send_to_server(__args, MESSAGE_RESEND, NULL);
 				break;
 			}
-			send_to_server(__args, MESSAGE_ID, __entity->id);
+			send_to_server(__args, MESSAGE_ID, __args->entity->id);
 			if(pthread_mutex_unlock(&(__args->entity->mutex))<0) {
 				perror("tcp_handler handle_message pthread_mutex_unlock");
 				break;
@@ -189,24 +216,26 @@ static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* _
 
 static void send_to_server(tcp_handler_args_t* __args, uint8_t __message_id, char* data) {
 	uint32_t send_buffer_length = 5;
+	uint32_t data_length = 5;
 	if(&data[0] != NULL) {
 		send_buffer_length += (uint32_t)strlen(data);
+		data_length = (uint32_t)strlen(data);
 	}
 	char send_buffer[send_buffer_length];
 
 	send_buffer[0] = __message_id;
-	&send_buffer[1] = send_buffer_length - 5;
 
-	if(&data[0] != NULL);
+	memcpy(&send_buffer[1], &data_length, sizeof(uint32_t));
+
+	if(&data[0] != NULL) {
 		memcpy(&send_buffer[5], &data[0], strlen(data));
 	}
 	send(__args->sockfd, &send_buffer[0], sizeof(send_buffer), 0);
 }
 
-static void reset_message(tcp_handler_message_t* __message) {
-	memset(__mesage, 0, sizeof(tcp_handler_message_t));
-	memset(&__buffer[0], 0, sizeof(__buffer));
-	message_identified = false;
+static void reset_message(tcp_handler_message_t* __message, char __buffer[1024]) {
+	memset(__message, 0, sizeof(tcp_handler_message_t));
+	memset(&__buffer[0], 0, sizeof(*__buffer));
 }
 
 /*

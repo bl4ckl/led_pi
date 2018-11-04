@@ -37,7 +37,4 @@ int entity_handler_args_init(entity_handler_args_t* __args, entity_bus_t* __bus,
 int entity_handler_args_destroy(entity_handler_args_t* __args);
 void* entity_handler(void* __args);
 
-static void handle_new_frame(entity_handler_args_t* __args);
-static void write_spi(entity_handler_args_t* __args);
-
 #endif /* ENTITY_HANDLER_H */

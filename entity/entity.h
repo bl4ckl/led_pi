@@ -89,8 +89,6 @@ typedef struct {
 int entity_write_config(entity_t* __entity, char* __data);
 int entity_write_effects(entity_t* __entity, char* __data);
 
-static int entity_free_config(entity_t* __entity);
-static int entity_free_effect(entity_t* __entity);
 int entity_free(entity_t* __entity);
 
 int entity_setup_play_handler(void* __handler);
