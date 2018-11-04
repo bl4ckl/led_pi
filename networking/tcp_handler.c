@@ -13,7 +13,12 @@ int tcp_handler_init() {
 	return 0;
 }
 
-int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd, void* __entity_update(long), entity_t* __entity) {
+int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd,
+	void* __entity_timesync(long),
+	void* __entity_play(),
+	void* __entity_pause(),
+	void* __entity_show(),  entity_t* __entity) {
+
 	memset(__args, 0, sizeof(tcp_handler_args_t));
 
 	if(pthread_mutex_init(&(__args->mutex), NULL)<0) {
@@ -27,7 +32,10 @@ int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd, void* __enti
 	}
 
 	__args->sockfd = __sockfd;
-	__args->entity_update = __entity_update;
+	__args->entity_timesync = __entity_timesync;
+	__args->entity_play = __entity_play;
+	__args->entity_pause = __entity_pause;
+	__args->entity_show = __entity_show;
 	__args->entity = __entity;
 
 	return 0;
@@ -80,9 +88,6 @@ void* tcp_handler(void* __args) {
 			pthread_exit(NULL);
 		}
 
-		//Lock entity mutex
-		pthread_mutex_lock(&(args->entity->mutex));
-
 		//Process the message
 		if(!message_identified) {
 		        message.total_data_received += recv(args->sockfd, &buffer[0], sizeof(buffer), 0);
@@ -99,7 +104,7 @@ void* tcp_handler(void* __args) {
 		}
 
 		if((message.id != MESSAGE_NULL) && (message.total_data_length == message.total_data_received)) {
-			handle_message(&message, args->entity);
+			handle_message(args, &message);
 			reset_message(&message);
 			send_to_server(MESSAGE_READY);
 		} else if(message.total_data_length < message.total_data_received) {
@@ -107,7 +112,6 @@ void* tcp_handler(void* __args) {
 			send_to_server(MESSAGE_RESEND);
 		}
 
-		pthread_mutex_unlock(&(args->entity->mutex));
 		pthread_mutex_unlock(&(args->mutex));
 	}
 }
@@ -140,33 +144,62 @@ static int identify_message(tcp_handler_message_t* __message, char* __buffer[102
 	}
 }
 
-static void handle_message(tcp_handler_message* __message, entity* __entity) {
+static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* __message) {
 	switch(__message->id) {
 		case MESSAGE_ID:
+			if(pthread_mutex_lock(&(__args->entity->mutex))<0) {
+				perror("tcp_handler handle_message pthread_mutex_lock");
+				send_to_server(__args, MESSAGE_RESEND, NULL);
+				break;
+			}
+			send_to_server(__args, MESSAGE_ID, __entity->id);
+			if(pthread_mutex_unlock(&(__args->entity->mutex))<0) {
+				perror("tcp_handler handle_message pthread_mutex_unlock");
+				break;
+			}
 			break;
 		case MESSAGE_CONFIG:
+			if(entity_write_config(__args->entity, __message->data)<0) {
+				perror("tcp_handler handle_message MESSAGE_CONFIG");
+			}
 			break;
 		case MESSAGE_EFFECTS:
+			if(entity_write_effects( __args->entity, __message->data)<0) {
+				perror("tcp_handler handle_message MESSAGE_EFFECTS");
+			}
 			break;
 		case MESSAGE_TIME:
+			__args->entity_timesync((uint32_t)*(__message->data));
 			break;
 		case MESSAGE_PLAY:
+			__args->entity_play();
 			break;
 		case MESSAGE_PAUSE:
+			__args->entity_pause();
 			break;
 		case MESSAGE_PREVIEW:
 			break;
 		case MESSAGE_SHOW:
+			__args->entity_show();
 			break;
 		case MESSAGE_COLOR:
 			break;
 	}
 }
 
-static void send_to_server(tcp_handler_args* __args, uint8_t __message_id) {
-	char send_buffer[5];
+static void send_to_server(tcp_handler_args_t* __args, uint8_t __message_id, char* data) {
+	uint32_t send_buffer_length = 5;
+	if(&data[0] != NULL) {
+		send_buffer_length += (uint32_t)strlen(data);
+	}
+	char send_buffer[send_buffer_length];
+
 	send_buffer[0] = __message_id;
-	memset(&send_buffer[0], 0, 4);
+	&send_buffer[1] = send_buffer_length - 5;
+
+	if(&data[0] != NULL);
+		memcpy(&send_buffer[5], &data[0], strlen(data));
+	}
 	send(__args->sockfd, &send_buffer[0], sizeof(send_buffer), 0);
 }
 
@@ -176,6 +209,7 @@ static void reset_message(tcp_handler_message_t* __message) {
 	message_identified = false;
 }
 
+/*
 void TcpHandler(int signalType)
 {
         memset((void*)&message, 0, sizeof(message));
@@ -236,4 +270,4 @@ void TcpHandler(int signalType)
                         break;
         }
 }
-
+*/
