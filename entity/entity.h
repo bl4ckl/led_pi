@@ -68,7 +68,7 @@ typedef struct {
 	//mutex for struct access
 	pthread_mutex_t	mutex;
 	//id of this entity
-	char[13]	id;
+	char		id[13];
 	//need to check for this before working with the struct
 	bool		config_init;
 	bool		effects_init;
