@@ -4,6 +4,20 @@
 #include <pthread.h>
 #include <semaphore.h>
 
+#define MESSAGE_NULL		0
+#define MESSAGE_ID              1
+#define MESSAGE_CONFIG          2
+#define MESSAGE_EFFECTS         3
+#define MESSAGE_TIME            4
+#define MESSAGE_PLAY            5
+#define MESSAGE_PAUSE           6
+#define MESSAGE_PREVIEW         7
+#define MESSAGE_SHOW            8
+#define MESSAGE_COLOR           9
+#define MESSAGE_RESEND		10
+#define MESSAGE_READY		11
+
+
 typedef struct {
         uint8_t         id;
         uint32_t        total_data_length;
@@ -24,11 +38,16 @@ typedef struct {
 	//Socket file descriptor
 	int		sockfd;
 
-	//Ref to function call to update entity
-	void*		entity_update(long);
+	//Ref to function calls
+	void*		entity_timesync(uint32_t);
+	void*		entity_play();
+	void*		entity_pause();
+	void*		entity_show();
 
 	//Ref to entity
 	entity_t*	entity;
+
+	char[13]	id;
 }tcp_handler_args_t;
 
 int tcp_handler_init();
