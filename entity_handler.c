@@ -64,7 +64,7 @@ void* entity_handler(void* __args) {
 
 	//start the main loop
 	while(1) {
-		//Wait for signal from main_thread
+	//Wait for signal from main_thread
 		sem_wait(__args->entity_sem);
 
 		//Lock arg mutex
@@ -84,7 +84,6 @@ void* entity_handler(void* __args) {
 		//Write it out to the spi_bus
 		write_spi(args);
 
-		//Since we are finished unlock the mutexes
 		pthread_mutex_unlock(args->bus->&mutex);
 		pthread_mutex_unlock(args->&mutex);
 	}
