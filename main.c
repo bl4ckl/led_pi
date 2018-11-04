@@ -27,9 +27,6 @@ static int spifd;
 
 //Tcp connection
 static unsigned int server_ip;
-static int tcpsockfd;
-static char volatile buffer[1024];
-static struct ledmessage volatile message;
 
 //Timer
 static timer_t volatile* it_id;
@@ -42,78 +39,6 @@ static entity_t volatile* entity;
 //Test
 #define LEDS 77
 static unsigned char volatile data[LEDS*4+6];
-
-void TcpHandler(int signalType)
-{
-	memset((void*)&message, 0, sizeof(message));
-	memset((void*)&buffer, 0, sizeof(buffer));
-
-	//printf("receiving data\n");
-	message.dataReceived = recv(tcpsockfd, (char*)buffer, 1024, 0);
-	//printf("ending data\n");
-	buffer[message.dataReceived] = '\0';
-	//printf("get message id\n");
-	message.messageID  = *buffer;
-	message.dataLength = buffer[1];
-	message.data = (char*)&buffer[3];
-
-	printf("tcpclient received message with id %d\n", message.messageID);
-
-	switch(message.messageID) {
-		case MESSAGE_ID: {
-	        	char sendBuf[15];
-        		memset(&sendBuf, 0, sizeof(sendBuf));
-		       	uint16_t sizeOfBuf = 12;
-		        memcpy(&sendBuf[1], &sizeOfBuf, sizeof(sizeOfBuf));
-		        memcpy(&sendBuf[3], &id, sizeof(id)-1);
-		        send(tcpsockfd, sendBuf, sizeof(sendBuf), 0);
-
-			// TESTING PURPOSE
-			/*
-			char test[16];
-			memcpy(&test[0], &sendBuf[0], 15);
-			test[15] = '\0';
-        		printf("Send ID: %s\n", &test[2]);
-			printf("Bits: \n");
-			print_bits(sizeof(sendBuf), &sendBuf[0]);
-			*/
-			break; }
-		case MESSAGE_CONFIG:
-			if (entity_write_config((entity_t*)entity, message.data)<0) {
-				printf("entity_write_config() failed.");
-			} else {
-				printf("entity_write_config() succesfull.");
-			}
-			break;
-		case MESSAGE_EFFECTS:
-			if (entity_write_effects((entity_t*)entity, message.data)<0) {
-				printf("entity_write_effect() failed.");
-			} else {
-				printf("entity_write_effect() succesfull.");
-			}
-			break;
-		case MESSAGE_TIME:
-			break;
-		case MESSAGE_PLAY:
-			entity_play((entity_t*)entity, (timer_t*)it_id, (struct itimerspec*)it_spec);
-			break;
-		case MESSAGE_PAUSE: {
-			entity_stop((timer_t*)it_id);
-			unsigned char color[4];
-			memset(&color[0], 0, 4);
-			entity_full((entity_t*)entity, color);
-			break; }
-		case MESSAGE_PREVIEW:
-			break;
-		case MESSAGE_SHOW: {
-			unsigned char color[4];
-			memset(&color[0], 0xFF, 4);
-			entity_full((entity_t*)entity, color);
-			break; }
-		case MESSAGE_COLOR:
-			break;
-	}
-}
 
 void fire_new_frame(long __current_frame, entity_t* __entity) {
 //	for(int i = 0; i<__entity->num_bus; i++) {
@@ -205,9 +130,9 @@ int init() {
 	udpclientstart(&server_ip, SERVER_PORT);
 
 	//Connect to the server
-	tcpcreatesocket(&tcpsockfd);
-	tcpsetuphandler(tcpsockfd, TcpHandler);
-	tcpclientstart(tcpsockfd, server_ip, SERVER_PORT);
+//	tcpcreatesocket(&tcpsockfd);
+//	tcpsetuphandler(tcpsockfd, TcpHandler);
+//	tcpclientstart(tcpsockfd, server_ip, SERVER_PORT);
 
 	return 0;
 }

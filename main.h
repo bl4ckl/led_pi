@@ -5,15 +5,6 @@
 #define SERVER_PORT 31313
 #endif
 
-#include <stdint.h>
-
-struct ledmessage {
-	uint8_t		messageID;
-	uint32_t	dataLength;
-	uint32_t	dataReceived;
-	char*		data;
-};
-
 void black();
 void cleanup();
 
