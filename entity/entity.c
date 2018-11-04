@@ -10,11 +10,13 @@
 #include <time.h>
 #include <pthread.h>
 
-//Maybe do all this shit with malloc, idk right now
-//Edit: Malloc that shit
-
 int entity_write_config(entity_t* __entity, char* __data) {
 	entity_free(__entity);
+
+	if(pthread_mutex_lock(&(__entity->mutex))<0) {
+		perror("entity_write_config pthread_mutex_lock");
+		return -1;
+	}
 
 	int readBytes = 0;
 	__entity->num_bus = (uint16_t)__data[readBytes];
@@ -83,10 +85,19 @@ int entity_write_config(entity_t* __entity, char* __data) {
 		memset(__entity->bus[i].spi_write_out, 0, __entity->bus[i].size_spi_write_out);
 	}
 
+	__entity->config_init = true;
+
+	if(pthread_mutex_unlock(&(__entity->mutex))<0) {
+		perror("entity_write_config pthread_mutex_unlock");
+		return -1;
+	}
+
 	return 0;
 }
 
-int entity_free_config(entity_t* __entity) {
+static int entity_free_config(entity_t* __entity) {
+	__entity-config_init = false;
+
 	for(int i=0; i<(__entity->num_bus); i++) {
 		for(int j=0; j<(__entity->bus[i].num_group); j++) {
 			free(__entity->bus[i].group[j].led_offset);
@@ -109,6 +120,20 @@ int entity_free_config(entity_t* __entity) {
 }
 
 int entity_write_effects(entity_t* __entity, char* __data) {
+	if(pthread_mutex_lock(&(__entity->mutex))<0) {
+		perror("entity_write_effects pthread_mutex_lock");
+		return -1;
+	}
+
+	if(!(__entity->config_init)) {
+		if(pthread_mutex_unlock(&(__entity->mutex))<0) {
+			perror("entity_write_effects pthread_mutex_unlock");
+			return -1;
+		}
+		perror("entity_write_effect config_init false");
+		return -1;
+	}
+
 	entity_free_effect(__entity);
 
 	int readBytes = 0;
@@ -216,10 +241,19 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 		}
 	}
 
+	__entity->effects_init = true;
+
+	if(pthread_mutex_unlock(&(__entity->mutex))<0) {
+		perror("entity_write_effects pthread_mutex_unlock");
+		return -1;
+	}
+
 	return 0;
 }
 
-int entity_free_effect(entity_t* __entity) {
+static int entity_free_effect(entity_t* __entity) {
+	__entity->effects_init = false;
+
 	for(int i=0; i<__entity->num_bus; i++) {
 		for(int j=0; j<__entity->num_frame; j++) {
 			free(__entity->bus[i].frame[j].change);
@@ -237,6 +271,10 @@ int entity_free_effect(entity_t* __entity) {
 }
 
 int entity_free(entity_t* __entity) {
+	if(pthread_mutex_lock(&(__entity->mutex))<0) {
+		perror("entity_free pthread_mutex_lock");
+		return -1;
+	}
 
 	if(entity_free_config(__entity)<0) {
 		printf("free_config() failed.");
@@ -245,6 +283,11 @@ int entity_free(entity_t* __entity) {
 
 	if(entity_free_effect(__entity)<0) {
 		printf("free_effect() failed.");
+		return -1;
+	}
+
+	if(pthread_mutex_unlock(&(__entity->mutex))<0) {
+		perror("entity_free pthread_mutex_unlock");
 		return -1;
 	}
 

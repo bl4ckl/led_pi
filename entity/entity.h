@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <pthread.h>
+#include <stdbool.h>
 
 #define ENTITY_BYTES_START_LED 6
 #define ENTITY_BYTES_PER_LED 4
@@ -64,6 +65,11 @@ typedef struct {
 
 //entity
 typedef struct {
+	//mutex for struct access
+	pthread_mutex_t	mutex;
+	//need to check for this before working with the struct
+	bool		config_init;
+	bool		effects_init;
 	//total number of different bus in the system
         uint16_t        num_bus;
         entity_bus_t*   bus;
@@ -81,8 +87,8 @@ typedef struct {
 int entity_write_config(entity_t* __entity, char* __data);
 int entity_write_effects(entity_t* __entity, char* __data);
 
-int entity_free_config(entity_t* __entity);
-int entity_free_effect(entity_t* __entity);
+static int entity_free_config(entity_t* __entity);
+static int entity_free_effect(entity_t* __entity);
 int entity_free(entity_t* __entity);
 
 int entity_setup_play_handler(void* __handler);
