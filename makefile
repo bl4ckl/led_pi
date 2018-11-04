@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -g -O0
-OBJ = main.o tcpclient.o udpclient.o utility.o entity/entity.o spi.o
+OBJ = main.o networking/tcpclient.o networking/udpclient.o utility.o entity/entity.o spi.o
 BIN = prog
 
 prog: $(OBJ)

@@ -1,6 +1,6 @@
 #include "main.h"
-#include "tcpclient.h"
-#include "udpclient.h"
+#include "networking/tcpclient.h"
+#include "networking/udpclient.h"
 
 #include "entity/entity.h"
 #include "spi.h"
