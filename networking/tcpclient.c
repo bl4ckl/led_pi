@@ -14,24 +14,15 @@
 #include <stdbool.h>
 #include <net/if.h>
 
-int tcpcreatesocket(int* __tcpsockfd)
-{
+int tcp_client_init(int* __tcpsockfd, void (*__handler_function)) {
     //Creating socket file descriptor
     int sockfd;
     if((sockfd  = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
-        perror("tcpcreatesocket socket");
+        perror("tcp_client_init socket");
         return -1;
     }
 
-    *__tcpsockfd = sockfd;
-
-	printf("tcp_create_socket successfull\n");
-    return 0;
-}
-
-int tcpsetuphandler(int __tcpsockfd, void* __handler_function)
-{
     struct sigaction handler;
     handler.sa_handler = __handler_function;
 
@@ -48,23 +39,23 @@ int tcpsetuphandler(int __tcpsockfd, void* __handler_function)
 	return -1;
     }
 
-    if (fcntl(__tcpsockfd, F_SETOWN, getpid()) < 0)
+    if (fcntl(sockfd, F_SETOWN, getpid()) < 0)
     {
 	perror("tcpsetuphandler fcntl");
 	return -1;
     }
 
-    if (fcntl(__tcpsockfd, F_SETFL, O_NONBLOCK | FASYNC) <0)
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK | FASYNC) <0)
     {
 	perror("tcpsetuphandler fcntl");
 	return -1;
     }
 
-	printf("tcp_setup_handler successfull\n");
+    *__tcpsockfd = sockfd;
     return 0;
 }
 
-int tcpclientstart(int __tcpsockfd, int __server_ip, int __server_port) {
+int tcp_client_start(int __tcpsockfd, int __server_ip, int __server_port) {
     struct sockaddr_in serverAddress;
 
     memset(&serverAddress, 0, sizeof(serverAddress));
@@ -81,10 +72,9 @@ int tcpclientstart(int __tcpsockfd, int __server_ip, int __server_port) {
         return -1;
     }
 
-	printf("tcp_client_start successfull\n");
     return 0;
 }
 
-int tcpclientstop(int __tcpsockfd) {
+int tcp_client_stop(int __tcpsockfd) {
     return close(__tcpsockfd);
 }

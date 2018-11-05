@@ -10,7 +10,7 @@ typedef struct {
 	struct itimerspec	timer_spec;
 }entity_timer_t;
 
-int timers_init(entity_timer_t* __timer_id, void (*__handler)(int, siginfo_t*, void*));
+int timers_init(entity_timer_t* __timer_id, int __signal, void (*__handler)(int, siginfo_t*, void*));
 int timers_start(entity_timer_t* __timer_id);
 int timers_stop(entity_timer_t* __timer_id);
 

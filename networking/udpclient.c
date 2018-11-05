@@ -32,10 +32,14 @@ unsigned int ipv4AddressToInt(char* __ip_address)
 }
 
 int udp_client_init(int __server_port) {
+	if(init) {
+		close(sockfd);
+	}
+
 	//Creating socket file descriptor
 	if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
-	perror("udp_client_init socket");
+		perror("udp_client_init socket");
 		return -1;
 	}
 
@@ -82,7 +86,7 @@ int udp_client_receive(unsigned int* __server_ip) {
 		return -1;
 	}
 	int message = 0;
-        if((message = recvfrom(socketFileDescriptor, (char *)buffer, 1024, MSG_DONTWAIT, (struct sockaddr*)&serverAddress, &serverAddressLength))<0) {
+        if((message = recvfrom(sockfd, (char *)buffer, 1024, MSG_DONTWAIT, (struct sockaddr*)&serverAddress, &serverAddressLength))<0) {
 		perror("udp_client_receive recvfrom");
 		return -1;
 	} else {

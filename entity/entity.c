@@ -308,10 +308,7 @@ int entity_full(entity_t* __entity, unsigned char color[4]) {
 	                memset(&data[9+i], color[3], 1);
 		}
 		for(int i=0; i<8;i++) {
-	                if(spi_write(i, &data[0], sizeof(data))<0) {
-				printf("write failed %d\n", i);
-				fflush(stdout);
-}
+	                spi_write(i, &data[0], sizeof(data));
 		}
         } else {
                 for(int i=0;i<__entity->num_bus;i++) {

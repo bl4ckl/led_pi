@@ -5,19 +5,19 @@
 #include <time.h>
 #include <signal.h>
 
-int timers_init(entity_timer_t* __timer_id, void (*__handler)(int, siginfo_t*, void*)) {
+int timers_init(entity_timer_t* __timer_id, int __signal_id, void (*__handler)(int, siginfo_t*, void*)) {
 	struct sigaction sigac;
 
 	sigac.sa_flags = SA_SIGINFO;
 	sigac.sa_sigaction = __handler;
 	sigemptyset(&sigac.sa_mask);
-	if(sigaction(SIGRTMIN, &sigac, NULL)<0) {
+	if(sigaction(__signal_id, &sigac, NULL)<0) {
 		perror("timers init_timer sigaction");
 		return -1;
 	}
 
 	__timer_id->sig_event.sigev_notify = SIGEV_SIGNAL;
-	__timer_id->sig_event.sigev_signo = SIGRTMIN;
+	__timer_id->sig_event.sigev_signo = __signal_id;
 	__timer_id->sig_event.sigev_value.sival_ptr = &__timer_id->timer_id;
 
 	if(timer_create(CLOCK_REALTIME, &__timer_id->sig_event, &__timer_id->timer_id)<0) {
