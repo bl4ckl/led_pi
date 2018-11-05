@@ -8,6 +8,14 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdbool.h>
+
+static int sockfd;
+static struct sockaddr_in broadcastAddress, serverAddress;
+static char buffer[1024];
+static char *broadcastMessage = "I bims, eins LED!";
+static char desiredAnswer[] = "I bims, eins PC!";
+static bool init = false;
 
 unsigned int ipv4AddressToInt(char* __ip_address)
 {
@@ -23,63 +31,88 @@ unsigned int ipv4AddressToInt(char* __ip_address)
     return *(unsigned int*)arr;
 }
 
-int udpclientstart(unsigned int* __server_ip, int __server_port) {
-    int socketFileDescriptor;
-    char buffer[1024];
-    char *broadcastMessage = "I bims, eins LED!";
-    char desiredAnswer[] = "I bims, eins PC!";
-    struct sockaddr_in broadcastAddress, serverAddress;
-
-    //Creating socket file descriptor
-    if((socketFileDescriptor = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-    {
-        perror("socket creation failed");
-        exit(EXIT_FAILURE);
-    }
-
-    memset(&broadcastAddress, 0, sizeof(broadcastAddress));
-    memset(&serverAddress, 0, sizeof(serverAddress));
-
-    //Filling server information
-    broadcastAddress.sin_family = AF_INET;
-    broadcastAddress.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-    broadcastAddress.sin_port = htons(__server_port);
-
-    //give socket broadcast permissions
-    int broadcastEnable = 1;
-    setsockopt(socketFileDescriptor, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
-
-	while(1)
+int udp_client_init(int __server_port) {
+	//Creating socket file descriptor
+	if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
-    		sendto(socketFileDescriptor, (const char *)broadcastMessage, strlen(broadcastMessage), MSG_CONFIRM, (const struct sockaddr *)&broadcastAddress, sizeof(broadcastAddress));
-		printf("broadcast sent\n");
+	perror("udp_client_init socket");
+		return -1;
+	}
 
-	        int message;
-        	socklen_t serverAddressLength = sizeof(serverAddressLength);
-		printf("waiting for answer\n");
-	        message = recvfrom(socketFileDescriptor, (char *)buffer, 1024, MSG_WAITALL, (struct sockaddr*)&serverAddress, &serverAddressLength);
+    	//give socket broadcast permissions
+	int broadcastEnable = 1;
+	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+
+	memset(&broadcastAddress, 0, sizeof(broadcastAddress));
+
+    	//Filling server information
+    	broadcastAddress.sin_family = AF_INET;
+    	broadcastAddress.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+	broadcastAddress.sin_port = htons(__server_port);
+
+	init = true;
+	return 0;
+}
+
+int udp_client_send_broadcast(void) {
+	if(!init) {
+		perror("udp_client_receive init false");
+		return -1;
+	}
+
+	if(sendto(sockfd, (const char *)broadcastMessage, strlen(broadcastMessage), MSG_DONTWAIT, (const struct sockaddr *)&broadcastAddress, sizeof(broadcastAddress))<0) {
+		perror("udp_client_send_brodacast sendto");
+		return -1;
+	}
+
+	return 0;
+}
+
+int udp_client_receive(unsigned int* __server_ip) {
+	if(!init) {
+		perror("udp_client_receive init false");
+		return -1;
+	}
+
+	memset(&serverAddress, 0, sizeof(serverAddress));
+	socklen_t serverAddressLength = sizeof(serverAddressLength);
+
+	if(usleep(250000)<0) {
+		perror("udp_client_receive usleep");
+		return -1;
+	}
+	int message = 0;
+        if((message = recvfrom(socketFileDescriptor, (char *)buffer, 1024, MSG_DONTWAIT, (struct sockaddr*)&serverAddress, &serverAddressLength))<0) {
+		perror("udp_client_receive recvfrom");
+		return -1;
+	} else {
 	        buffer[message] = '\0';
-		printf("answer received: %s\n", buffer);
-	        if(message >= sizeof(desiredAnswer))
-	        {
+	        if(message >= sizeof(desiredAnswer)) {
 			int length = strlen(desiredAnswer);
 		        char bufferAnswer[length+1];
         		memcpy((void*)&bufferAnswer[0], (void*)&buffer[0], length);
 			bufferAnswer[length]='\0';
 			printf("stripped answer: %s\n", bufferAnswer);
 
-            		if(strcmp(desiredAnswer, bufferAnswer) == 0)
-            		{
+            		if(strcmp(desiredAnswer, bufferAnswer) == 0) {
                 		char ip[message-(sizeof(bufferAnswer)-1)];
 		                memcpy((void*)&ip, (void*)&buffer[sizeof(desiredAnswer)-1], message - (sizeof(bufferAnswer)-1));
                 		ip[sizeof(ip)] = '\0';
 		                printf("server found at %s.\n", &ip[0]);
 			   	*__server_ip = ipv4AddressToInt((char *)&ip);
-                		break;
-		        }
-        	}
-    	}
+                		return 0;
+		        } else {
+				perror("udp_client_receive strcmp");
+				return -1;
+			}
+        	} else {
+			perror("udp_client_receive message to small");
+			return -1;
+		}
+	}
 
-    	close(socketFileDescriptor);
-    	return 0;
+	close(sockfd);
+	init = false;
+
+	return 0;
 }
