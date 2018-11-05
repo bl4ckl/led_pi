@@ -1,0 +1,20 @@
+Execute this command:
+sudo systemctl edit --force --full led.service
+
+Write this in the opened file:
+[Unit]
+Description=Led Service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+ExecStart=/home/pi/Schreibtisch/led_pi/led.sh
+
+[Install]
+WantedBy=multi-user.target
+
+Execute this command:
+sudo systemctl enable led.service

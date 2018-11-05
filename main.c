@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #include <signal.h>
 #include <time.h>
@@ -160,7 +161,9 @@ void entity_black(void) {
 int main() {
 	if(init()<0) {
 		perror("main init");
-		system("sleep 30s; shutdown -r now");
+		printf("Initiating reboot in 30 seconds.");
+		fflush(stdout);
+		system("sleep 30s; shutdown -r");
 	}
 
 	//At first get the mac id
@@ -176,7 +179,9 @@ int main() {
 	//timers_start(&timer_heartbeat);
 
 	//Wait for messages
-	for(;;);
+	for(;;) {
+		sleep(1);
+	}
 
 	cleanup();
 }
