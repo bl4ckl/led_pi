@@ -10,6 +10,9 @@
 #include <pthread.h>
 #include <string.h>
 
+static int threads_cleanup_entity();
+static int threads_cleanup_tcp();
+
 static bool init = false;
 static bool entity_threads_started = false;
 static bool tcp_thread_started = false;
@@ -23,40 +26,46 @@ static entity_handler_args_t* entity_handler_args;
 static tcp_handler_args_t tcp_handler_args;
 
 int threads_init() {
-
+	entity_handler_init();
 	init = true;
 	return 0;
 }
 
 int threads_execute_entity(long __current_frame) {
+	if(!entity_threads_started) {
+		perror("threads threads_execute_entity entity_threads_started false");
+		return -1;
+	}
+
 	int res = 0;
-	bool threads_to_restart[num_entity_threads];
-	memset(&threads_to_restart[0], 0, sizeof(threads_to_restart));
+
+//	printf("\t\tthreads_execute_entity frame: %d\n", __current_frame);
 
 	for(int i=0; i<num_entity_threads; i++) {
 		if(pthread_mutex_lock(&(entity_handler_args[i].mutex))<0) {
 			perror("threads_execute_entity pthread_mutex_lock");
 			res = -1;
 		}
+//		printf("\t\t\tinside lock\n");
 
-		//Check if the previous call to this function caused a thread to exit
-		if(!(entity_handler_args[i].frame_update_completed)) {
-			perror("threads_execute_entity frame_update_completed false");
-			threads_to_restart[i] = true;
-		} else {
-			entity_handler_args[i].current_frame = __current_frame;
-			entity_handler_args[i].frame_update_completed = false;
-		}
+		entity_handler_args[i].current_frame = __current_frame;
+		entity_handler_args[i].frame_update_completed = false;
 
+//		printf("\t\t\t\ttrying to get out\n");
+		fflush(stdout);
 		if(pthread_mutex_unlock(&(entity_handler_args[i].mutex))<0) {
 			perror("threads_execute_entity pthread_mutex_unlock");
 			res = -1;
 		}
 
+//		printf("\t\t\toutside lock\n");
+
 		if(sem_post(&(entity_handler_args[i].entity_sem))<0) {
 			perror("threads_execute_entity sem_post");
 			res = -1;
 		}
+
+//		printf("\t\t\tsem_post success\n");
 	}
 
 	/*
@@ -80,7 +89,6 @@ int threads_start_entity(entity_t* __entity) {
 		perror("threads_start_entity entity_threads_started true");
 		return -1;
 	}
-
 	//Setting default values
 	num_entity_threads = __entity->num_bus;
 
@@ -131,7 +139,7 @@ int threads_exit_entity() {
 	}
 
 	//Execute all threads so they can exit
-	threads_execute_entity(0);
+	threads_execute_entity(false);
 
 	//Wait for all threads to exit
 	for(int i=0; i<num_entity_threads; i++) {
@@ -146,8 +154,9 @@ int threads_exit_entity() {
 	return res;
 }
 
-int threads_cleanup_entity() {
+static int threads_cleanup_entity() {
 	free((void*)entity_threads);
+	entity_threads = NULL;
 
 	for(int i=0; i<num_entity_threads; i++) {
 		if(entity_handler_args_destroy(&entity_handler_args[i])<0) {
@@ -155,6 +164,7 @@ int threads_cleanup_entity() {
 		}
 	}
 	free((void*)entity_handler_args);
+	entity_handler_args = NULL;
 
 	entity_threads_started = false;
 	num_entity_threads = 0;
@@ -184,6 +194,8 @@ int threads_execute_tcp() {
 
 int threads_start_tcp(int __sockfd, entity_t* __entity,
 	void (*__entity_timesync)(uint32_t),
+        void (*__entity_config_effects_pre)(void),
+        void (*__entity_effects_post)(void),
 	void (*__entity_play)(void),
 	void (*__entity_pause)(void),
 	void (*__entity_show)(void)) {
@@ -198,7 +210,7 @@ int threads_start_tcp(int __sockfd, entity_t* __entity,
 	}
 
 	//Init args ands start thread
-	if(tcp_handler_args_init(&tcp_handler_args, __sockfd, __entity_timesync, __entity_play, __entity_pause, __entity_show, __entity)<0) {
+	if(tcp_handler_args_init(&tcp_handler_args, __sockfd, __entity_timesync, __entity_config_effects_pre, __entity_effects_post, __entity_play, __entity_pause, __entity_show, __entity)<0) {
 		perror("threads_start_tcp tpc_handler_args_init");
 		return -1;
 	}
@@ -209,6 +221,20 @@ int threads_start_tcp(int __sockfd, entity_t* __entity,
 
 	tcp_thread_started = true;
 	return 0;
+}
+
+int threads_tcp_update_fd(int __sockfd) {
+	int res = 0;
+	if(pthread_mutex_lock(&(tcp_handler_args.mutex))<0) {
+		perror("threads_update_fd pthread_mutex_lock");
+		res = -1;
+	}
+	tcp_handler_args.sockfd = __sockfd;
+	if(pthread_mutex_unlock(&(tcp_handler_args.mutex))<0) {
+		perror("threads_update_fd pthread_mutex_unlock");
+		res = -1;
+	}
+	return res;
 }
 
 int threads_exit_tcp() {
@@ -238,10 +264,11 @@ int threads_exit_tcp() {
 		res = -1;
 	}
 
+	threads_cleanup_tcp();
 	return res;
 }
 
-int threads_cleanup_tcp() {
+static int threads_cleanup_tcp() {
 	int res = 0;
 	if(tcp_handler_args_destroy(&tcp_handler_args)<0) {
 		perror("threads_cleanup_tcp tcp_handler_args_destroy");

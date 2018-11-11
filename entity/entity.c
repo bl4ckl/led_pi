@@ -1,6 +1,7 @@
 /*  INCLUDES MAIN */
 #include "entity.h"
 #include "../spi.h"
+#include "../utility.h"
 
 #include <netinet/in.h>
 #include <stdint.h>
@@ -67,6 +68,7 @@ int entity_write_config(entity_t* __entity, char* __data) {
 			readBytes++;
 
 			__entity->bus[i].group[j].num_led = ntohs(*(uint16_t*)&__data[readBytes]);
+			//print_bits(2, &__data[readBytes]);
 			readBytes += 2;
 
 			num_led_bus += __entity->bus[i].group[j].num_led;
@@ -97,6 +99,10 @@ int entity_write_config(entity_t* __entity, char* __data) {
 		//Allocate the memory for the spi_write_out[]
 		if((__entity->bus[i].spi_write_out = (unsigned char*)malloc(__entity->bus[i].size_spi_write_out))==NULL) {
 			printf("allocating memory for spi_write_out failed.");
+			return -1;
+		}
+		if((__entity->bus[i].intern_spi_write_out = (unsigned char*)malloc(__entity->bus[i].size_spi_write_out))==NULL) {
+			printf("allocating memory for intern_spi_write_out failed.");
 			return -1;
 		}
 		memset(__entity->bus[i].spi_write_out, 0, __entity->bus[i].size_spi_write_out);
@@ -138,6 +144,8 @@ static int entity_free_config(entity_t* __entity) {
 			if(__entity->bus[i].spi_write_out_malloced) {
 				free(__entity->bus[i].spi_write_out);
 				__entity->bus[i].spi_write_out = NULL;
+				free(__entity->bus[i].intern_spi_write_out);
+				__entity->bus[i].intern_spi_write_out = NULL;
 				__entity->bus[i].spi_write_out_malloced = false;
 			}
 		}
@@ -186,6 +194,7 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 	printf("entity:\t received effects:\n");
 	printf("\t\tnum_frame: %d\n", __entity->num_frame);
 	printf("\t\tfps: %d\n", __entity->fps);
+	printf("\t\tnsec: %ld\n", __entity->nsec);
 	printf("\t\tnum_second: %d\n", __entity->num_second);
 
 	//Allocate the memory for all seconds (full images)
@@ -226,10 +235,7 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 					for(int k=0; k<(__entity->bus[j].num_group); k++) {
 						if(__entity->bus[j].group[k].group_id==group_id) {
 							uint16_t offset = __entity->bus[j].group[k].led_offset[led_id];
-							//printf("\t\t\toffset: %d\t\treadBytes: %d\n", offset, readBytes);
-							//printf("\t\t\toffset: %p\treadBytes: %p\n", &__entity->bus[j].second[i].spi_write_out[offset], &__data[readBytes]);
-							//fflush(stdout);
-							memcpy((void*)&__entity->bus[j].second[i].spi_write_out[offset], (void*)&__data[readBytes], 4);
+							memcpy(&__entity->bus[j].second[i].spi_write_out[offset], &__data[readBytes], 4);
 							readBytes += 4;
 							break;
 						}
@@ -240,9 +246,12 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 		}
 	}
 
-	//Allocate space for all frames in all busses
+	//Allocate space for all frames in all busses and write the first images into the spi_write_out of the bus
 	for(int i=0; i<__entity->num_bus; i++) {
-		printf("\tallocating frames\n");
+		//If we don't do this, spi_write_out is not preloaded with default for all leds (111 00000)
+		memcpy(&__entity->bus[i].intern_spi_write_out[0], &__entity->bus[i].second[0].spi_write_out[0], __entity->bus[i].size_spi_write_out);
+
+		printf("\tallocating frames for bus: %d\n", __entity->bus[i].bus_id);
 		if((__entity->bus[i].frame=(entity_frame_t*)malloc(sizeof(entity_frame_t)*__entity->num_frame))<0) {
 			perror("entity_write_effect malloc frame");
 			return -1;
@@ -254,6 +263,8 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 	uint16_t frames_with_changes = 0;
 	int32_t total_changes = 0;
 	//Loop over all frames
+	printf("\tlooping all frames\n");
+	fflush(stdout);
 	for(int i=0; i<__entity->num_frame; i++) {
 		//Read the changes of the current frame
 		uint16_t num_changes = ntohs(*(uint16_t*)&__data[readBytes]);
@@ -269,6 +280,7 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 			int readBytesSave = readBytes;
 			for(int j=0; j<num_changes; j++) {
 				//Read values of current change
+
 				uint8_t bus_id = (uint8_t)__data[readBytes];
 				readBytes += 8;
 
@@ -280,6 +292,16 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 						break;
 					}
 				}
+			}
+
+			//Get heap space for changes
+			for(int j=0; j<__entity->num_bus; j++) {
+				if((__entity->bus[j].frame[i].change=(entity_change_t*)malloc(sizeof(entity_change_t)*__entity->bus[j].frame[i].num_change))<0) {
+					perror("entity_write_effect malloc");
+					return -1;
+				}
+				__entity->bus[j].frame[i].change_malloced = true;
+				__entity->bus[j].frame[i].num_change=0;
 			}
 
 			//Second iteration: malloc and write data
@@ -296,22 +318,18 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 				//Loop over all busses
 				for(int k=0; k<__entity->num_bus; k++) {
 					if(__entity->bus[k].bus_id==bus_id) {
-						//Get heap space for changes
-						if((__entity->bus[k].frame[i].change=(entity_change_t*)malloc(sizeof(entity_change_t)*__entity->bus[k].frame[i].num_change))<0) {
-							perror("entity_write_effect malloc");
-							return -1;
-						}
-						__entity->bus[k].frame[i].change_malloced = true;
 
 						//Loop over all groups
 						for(int m=0; m<__entity->bus[k].num_group; m++) {
 							if(__entity->bus[k].group[m].group_id==group_id) {
 								//Save led_offset
 								uint16_t offset = __entity->bus[k].group[m].led_offset[led_id];
-								__entity->bus[k].frame[i].change[__entity->bus[k].frame[i].num_change-1].led_offset = offset;
+								__entity->bus[k].frame[i].change[__entity->bus[k].frame[i].num_change].led_offset = offset;
 								//Save color
-								memcpy(&(__entity->bus[k].frame[i].change[__entity->bus[k].frame[i].num_change-1].color[0]), &__data[readBytes], 4);
+								memcpy(&(__entity->bus[k].frame[i].change[__entity->bus[k].frame[i].num_change].color[0]), &__data[readBytes], 4);
 								readBytes += 4;
+								__entity->bus[k].frame[i].num_change++;
+//								printf("Change:\tOffset: %d\tA: %d\tB: %d\t G: %d\t R: %d\n", offset, __data[readBytes-4], __data[readBytes-3], __data[readBytes-2], __data[readBytes-1]);
 								break;
 							}
 						}

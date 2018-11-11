@@ -1,6 +1,7 @@
 #include "entity_handler.h"
 #include "entity.h"
 #include "../spi.h"
+#include "../utility.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -17,12 +18,13 @@ static bool init = false;
 static sem_t volatile spi_write_sem;
 
 int entity_handler_init() {
-	if(sem_init((sem_t*)&spi_write_sem, 0, 0)<0) {
-		perror("entity_handler_init sem_init");
-		return -1;
+	if(!init) {
+		if(sem_init((sem_t*)&spi_write_sem, 0, 1)<0) {
+			perror("entity_handler_init sem_init");
+			return -1;
+		}
+		init = true;
 	}
-
-	init = true;
 	return 0;
 }
 
@@ -39,6 +41,7 @@ int entity_handler_args_init(entity_handler_args_t* __args, entity_bus_t* __bus,
 		return -1;
 	}
 
+	__args->frame_update_completed = true;
 	__args->bus = __bus;
 	__args->fps = __fps;
 
@@ -75,6 +78,7 @@ void* entity_handler(void* __args) {
 
 		//Lock arg mutex
 		pthread_mutex_lock(&args->mutex);
+
 		//Check for exit issued
 		if(args->thread_exit_issued) {
 			pthread_mutex_unlock(&args->mutex);
@@ -104,25 +108,33 @@ static void handle_new_frame(entity_handler_args_t* __args) {
 		uint16_t last_second = __args->last_frame / __args->fps;
 		uint16_t current_second = __args->current_frame / __args->fps;
 
+//		printf("Maybe nee to load a full image. From: %d To: %d\n", last_second, current_second);
 		//When we are in another second load the image
 		//Set last_frame to the frame of the loaded second
 		if(current_second != last_second) {
-			memcpy(__args->bus->spi_write_out, &__args->bus->second[current_second], __args->bus->size_spi_write_out);
+			printf("Loaded full image\n");
+			memcpy(&__args->bus->intern_spi_write_out[0], &__args->bus->second[current_second].spi_write_out[0], __args->bus->size_spi_write_out);
 			__args->last_frame = current_second * __args->fps;
 		}
 	}
 
 	//Update spi_write_out to the current_frame
+	printf("Updating from: %d\t to: %d\n", __args->last_frame, __args->current_frame);
 	for(uint16_t i=__args->last_frame+1; i<=__args->current_frame; i++) {
+//		printf("\tChecking frame: %d for changes\n", i);
 		if(__args->bus->frame[i].num_change > 0) {
 			for(uint16_t j=0; j<__args->bus->frame[i].num_change; j++) {
 				uint16_t offset = __args->bus->frame[i].change[j].led_offset;
 				uint8_t* color = &(__args->bus->frame[i].change[j].color[0]);
-
-				memcpy(&(__args->bus->spi_write_out[offset]), color, 4);
+//				printf("Frame: %d\tChange:\tOffset: %d\tA: %d\tB: %d\t G: %d\t R: %d\n", i, offset, color[0], color[1], color[2], color[3]);
+				fflush(stdout);
+				memcpy(&__args->bus->intern_spi_write_out[offset], color, 4);
 			}
 		}
 	}
+
+	memcpy(&__args->bus->spi_write_out[0], &__args->bus->intern_spi_write_out[0], __args->bus->size_spi_write_out);
+	__args->last_frame = __args->current_frame;
 }
 
 static void write_spi(entity_handler_args_t* __args) {

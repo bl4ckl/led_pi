@@ -23,6 +23,8 @@
 
 void entity_black(void);
 void entity_show(void);
+void entity_play(void);
+void entity_pause(void);
 void get_server_ip();
 int init_networking();
 
@@ -35,6 +37,9 @@ static int spifd;
 static entity_t volatile* entity;
 static unsigned int server_ip;
 static int tcpsockfd;
+static pthread_mutex_t current_frame_mutex;
+static uint32_t current_frame = 0;
+static bool playing = false;
 
 //Timer
 static entity_timer_t timer_broadcast;
@@ -49,9 +54,13 @@ void intHandler(int signalType) {
 }
 
 void cleanup() {
+	threads_exit_entity();
+
+	threads_exit_tcp();
+
 	entity_black();
-//	printf("Freeing entity.\n");
 	entity_free((entity_t*)entity);
+
 	free((void*)entity);
 }
 
@@ -67,26 +76,29 @@ void timer_handler(int __signal, siginfo_t* __sig_info, void* __dummy) {
 	timer_t* current_timer = __sig_info->si_value.sival_ptr;
 
 	if(*current_timer == timer_play.timer_id) {
-
+//		printf("Trying to update frame\n");
+		pthread_mutex_lock(&current_frame_mutex);
+//		printf("\tinside lock\n");
+		current_frame++;
+		threads_execute_entity(current_frame);
+		pthread_mutex_unlock(&current_frame_mutex);
+//		printf("\toutside lock\n");
 	} else if(*current_timer == timer_heartbeat.timer_id) {
-//		printf("Issueing heartbeat\n");
 		if(threads_execute_tcp(true)<0) {
 			timers_stop(&timer_heartbeat);
-			threads_exit_tcp();
-			threads_cleanup_tcp();
 			close(tcpsockfd);
 
-			while(init_networking()<0);
-			//Get the server ip
-			get_server_ip();
-
-			//start tcp handling
-			threads_start_tcp(tcpsockfd, (entity_t*)entity, NULL, NULL, NULL, entity_show);
-			tcp_client_start(tcpsockfd, server_ip, SERVER_PORT);
-			timers_start(&timer_heartbeat);
+			//Create TCP Socket
+			if(tcp_client_init(&tcpsockfd, tcp_wrapper)<0) {
+				perror("init tcp_client_init");
+			} else {
+				timers_start(&timer_heartbeat);
+			}
 		}
 	} else if(*current_timer == timer_show.timer_id) {
-		entity_black();
+		if(!playing) {
+			entity_black();
+		}
 	} else if(*current_timer == timer_broadcast.timer_id) {
 		printf("Sending UDP broadcast.\n");
 		udp_client_send_broadcast();
@@ -176,18 +188,62 @@ void get_server_ip() {
 	timers_stop(&timer_broadcast);
 }
 
-void entity_show(void) {
-	unsigned char color[4];
-        memset(&color[0], 0xFF, 4);
-        entity_full(NULL, color);
+void entity_timestamp(uint32_t __frame) {
+	pthread_mutex_lock(&current_frame_mutex);
+	current_frame = __frame;
+	threads_execute_entity(current_frame);
+	pthread_mutex_unlock(&current_frame_mutex);
+}
 
-	timers_start(&timer_show);
+void entity_config_effects_pre(void) {
+	if(playing) {
+		entity_pause();
+	}
+	threads_exit_entity();
+}
+
+void entity_effects_post(void) {
+	threads_start_entity((entity_t*)entity);
+}
+
+void entity_play(void) {
+	if(!playing) {
+		timer_play.timer_spec.it_value.tv_nsec = entity->nsec;
+		timer_play.timer_spec.it_interval = timer_play.timer_spec.it_value;
+		if(timers_start(&timer_play)>0) {
+			playing = true;
+		}
+	} else {
+		perror("main entity_play already playing");
+	}
+}
+
+
+void entity_pause(void) {
+	timers_stop(&timer_play);
+	playing = false;
+}
+
+void entity_show(void) {
+	if(!playing) {
+		unsigned char color[4];
+	        memset(&color[0], 0xFF, 4);
+       		entity_full(NULL, color);
+
+		timers_start(&timer_show);
+	} else {
+		perror("main entity_show show while playing");
+	}
 }
 
 void entity_black(void) {
-	 unsigned char color[4];
-         memset(&color[0], 0, 4);
-         entity_full(NULL, color);
+	if(!playing) {
+		unsigned char color[4];
+        	memset(&color[0], 0, 4);
+        	entity_full(NULL, color);
+	} else {
+		perror("main entity_black black while playing");
+	}
 }
 
 int main() {
@@ -208,7 +264,7 @@ int main() {
 	get_server_ip();
 
 	//start tcp handling
-	threads_start_tcp(tcpsockfd, (entity_t*)entity, NULL, NULL, NULL, entity_show);
+	threads_start_tcp(tcpsockfd, (entity_t*)entity, entity_timestamp, entity_config_effects_pre, entity_effects_post, entity_play, entity_pause, entity_show);
 	tcp_client_start(tcpsockfd, server_ip, SERVER_PORT);
 //	timers_start(&timer_heartbeat);
 

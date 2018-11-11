@@ -14,7 +14,7 @@ typedef struct {
 	//if of this group (position on the bus)
         uint8_t         group_id;
 	//total number of leds in this group
-        uint8_t         num_led;
+        uint16_t         num_led;
 	//array of offsets of the corresponding led in the spi_write_out[]
 	//of the corresponding bus
 	bool		led_offset_malloced;
@@ -59,7 +59,9 @@ typedef struct {
 	//size of spi_write_out = num_led * 4
 	uint16_t		size_spi_write_out;
 	//byte[] to write out to the spi bus
+	//we need 2 of them, cause or byte[] will get overridden
 	bool			spi_write_out_malloced;
+	unsigned char*		intern_spi_write_out;
         unsigned char*		spi_write_out;
 	//struct to hold spi_write_out for the full seconds / images
 	bool			second_malloced;
@@ -99,10 +101,6 @@ int entity_write_effects(entity_t* __entity, char* __data);
 
 int entity_free(entity_t* __entity);
 
-int entity_setup_play_handler(void* __handler);
-int entity_setup_timer(timer_t* __timer_id);
-int entity_play(entity_t* __entity, timer_t* __timer_id, struct itimerspec* __it_spec);
-int entity_stop(timer_t* __timer_id);
 int entity_full(entity_t* __entity, unsigned char color[4]);
 
 #endif /* LED_H */
