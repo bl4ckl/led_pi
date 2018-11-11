@@ -2,6 +2,7 @@
 #include "entity.h"
 #include "../spi.h"
 
+#include <netinet/in.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,14 +23,19 @@ int entity_write_config(entity_t* __entity, char* __data) {
 	}
 
 	int readBytes = 0;
-	__entity->num_bus = (uint16_t)__data[readBytes];
+	__entity->num_bus = ntohs(*(uint16_t*)&__data[readBytes]);
 	readBytes += 2;
+
+	printf("entity:\t received config:\n");
+	printf("\t\tnum_bus: %d\n", __entity->num_bus);
 
 	//Allocate the memory for all busses
 	if((__entity->bus = (entity_bus_t*)malloc(sizeof(entity_bus_t) * __entity->num_bus))==NULL) {
 		perror("entity_write_config malloc __entity->bus");
 		return -1;
 	}
+	memset(__entity->bus, 0, sizeof(entity_bus_t) * __entity->num_bus);
+	__entity->bus_malloced = true;
 	uint16_t num_led_bus;
 
 	for(int i=0; i<(__entity->num_bus); i++) {
@@ -41,44 +47,52 @@ int entity_write_config(entity_t* __entity, char* __data) {
 		__entity->bus[i].bus_id = (uint8_t)__data[readBytes];
 		readBytes++;
 
-		 __entity->bus[i].num_group = (uint16_t)__data[readBytes];
+		 __entity->bus[i].num_group = ntohs(*(uint16_t*)&__data[readBytes]);
 		readBytes += 2;
+
+		printf("\t\t\tbus_id: %d\n", __entity->bus[i].bus_id);
+		printf("\t\t\t\tnum_group: %d\n", __entity->bus[i].num_group);
 
 		//Allocate the memory for all groups
 		if((__entity->bus[i].group = (entity_group_t*)malloc(sizeof(entity_group_t)*__entity->bus[i].num_group))==NULL) {
 			printf("allocating memory for groups failed.");
 			return -1;
 		}
+		memset(__entity->bus[i].group, 0, sizeof(entity_group_t)*__entity->bus[i].num_group);
+		__entity->bus[i].group_malloced = true;
 		num_led_bus = 0;
 
 		for(int j=0; j<__entity->bus[i].num_group; j++) {
 			__entity->bus[i].group[j].group_id = (uint8_t)__data[readBytes];
 			readBytes++;
 
-			__entity->bus[i].group[j].num_led = (uint16_t)__data[readBytes];
+			__entity->bus[i].group[j].num_led = ntohs(*(uint16_t*)&__data[readBytes]);
 			readBytes += 2;
 
 			num_led_bus += __entity->bus[i].group[j].num_led;
+
+			printf("\t\t\t\t\tgroup_id: %d\n", __entity->bus[i].group[j].group_id);
+			printf("\t\t\t\t\t\tnum_led: %d\n", __entity->bus[i].group[j].num_led);
 
 			//Allocate the memory for all offsets
 			if((__entity->bus[i].group[j].led_offset = (uint16_t*)malloc(sizeof(uint16_t) * __entity->bus[i].group[j].num_led))==NULL) {
 				printf("allocating memory for groups failed.");
 				return -1;
 			}
+			memset(__entity->bus[i].group[j].led_offset, 0, sizeof(uint16_t)*__entity->bus[i].group[j].num_led);
+			__entity->bus[i].group[j].led_offset_malloced = true;
 
 			for(int k=0; k<__entity->bus[i].group[j].num_led; k++) {
 				__entity->bus[i].group[j].led_offset[k] = ENTITY_BYTES_START_LED + k * ENTITY_BYTES_PER_LED;
 			}
 		}
 
+		__entity->num_led += num_led_bus;
 		__entity->bus[i].num_led = num_led_bus;
 		__entity->bus[i].size_spi_write_out = ENTITY_BYTES_START_LED + __entity->bus[i].num_led * ENTITY_BYTES_PER_LED;
 
-		//Allocate the memory for all seconds (full images)
-		if((__entity->bus[i].second = (entity_second_t*)malloc(__entity->bus[i].size_spi_write_out * __entity->num_second))==NULL) {
-			printf("allocating memory for seconds (full images) failed.");
-			return -1;
-		}
+		printf("\t\t\t\tnum_led: %d\n", __entity->bus[i].num_led);
+		printf("\t\t\t\tsize_spi_write_out: %d\n", __entity->bus[i].size_spi_write_out);
 
 		//Allocate the memory for the spi_write_out[]
 		if((__entity->bus[i].spi_write_out = (unsigned char*)malloc(__entity->bus[i].size_spi_write_out))==NULL) {
@@ -86,6 +100,7 @@ int entity_write_config(entity_t* __entity, char* __data) {
 			return -1;
 		}
 		memset(__entity->bus[i].spi_write_out, 0, __entity->bus[i].size_spi_write_out);
+		__entity->bus[i].spi_write_out_malloced = true;
 	}
 
 	__entity->config_init = true;
@@ -101,23 +116,38 @@ int entity_write_config(entity_t* __entity, char* __data) {
 static int entity_free_config(entity_t* __entity) {
 	__entity->config_init = false;
 
-	for(int i=0; i<(__entity->num_bus); i++) {
-		for(int j=0; j<(__entity->bus[i].num_group); j++) {
-			free(__entity->bus[i].group[j].led_offset);
-		}
-		if(pthread_mutex_destroy(&(__entity->bus[i].mutex))<0) {
-			perror("entity_free_config pthread_mutex_destroy");
+	if(__entity->bus_malloced) {
+		for(int i=0; i<(__entity->num_bus); i++) {
+			if(pthread_mutex_destroy(&(__entity->bus[i].mutex))<0) {
+				perror("entity_free_config pthread_mutex_destroy");
+			}
+
+			if(__entity->bus[i].group_malloced) {
+				for(int j=0; j<(__entity->bus[i].num_group); j++) {
+					if(__entity->bus[i].group[j].led_offset_malloced) {
+						free(__entity->bus[i].group[j].led_offset);
+						__entity->bus[i].group[j].led_offset = NULL;
+						__entity->bus[i].group[j].led_offset_malloced = false;
+					}
+				}
+				free(__entity->bus[i].group);
+				__entity->bus[i].group = NULL;
+				__entity->bus[i].group_malloced = false;
+			}
+
+			if(__entity->bus[i].spi_write_out_malloced) {
+				free(__entity->bus[i].spi_write_out);
+				__entity->bus[i].spi_write_out = NULL;
+				__entity->bus[i].spi_write_out_malloced = false;
+			}
 		}
 
-		free(__entity->bus[i].group);
-		free(__entity->bus[i].spi_write_out);
-		free(__entity->bus[i].second);
+		free(__entity->bus);
+		__entity->bus = NULL;
+		__entity->bus_malloced = false;
 	}
-
-	free(__entity->bus);
-	__entity->bus = NULL;
-
-	memset(&(__entity->num_bus), 0, sizeof(__entity->num_bus));
+	__entity->num_bus = 0;
+	__entity->num_led = 0;
 
 	return 0;
 }
@@ -140,7 +170,7 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 	entity_free_effect(__entity);
 
 	int readBytes = 0;
-	__entity->num_frame = (uint16_t)__data[readBytes];
+	__entity->num_frame = ntohs(*(uint16_t*)&__data[readBytes]);
 	readBytes += 2;
 
 	__entity->fps = (uint8_t)__data[readBytes];
@@ -149,81 +179,129 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 	__entity->nsec = (long)(1000000000/__entity->fps);
 
 	__entity->num_second = (uint16_t)(__entity->num_frame / __entity->fps);
+	if(__entity->num_frame % __entity->fps > 0) {
+		__entity->num_second += 1;
+	}
+
+	printf("entity:\t received effects:\n");
+	printf("\t\tnum_frame: %d\n", __entity->num_frame);
+	printf("\t\tfps: %d\n", __entity->fps);
+	printf("\t\tnum_second: %d\n", __entity->num_second);
+
+	//Allocate the memory for all seconds (full images)
+	for(int i=0; i<__entity->num_bus; i++) {
+//		printf("\tallocating seconds\n");
+		if((__entity->bus[i].second = (entity_second_t*)malloc(sizeof(entity_second_t) * __entity->num_second))==NULL) {
+			printf("allocating memory for seconds (full images) failed.");
+			return -1;
+		}
+		memset(__entity->bus[i].second, 0, sizeof(entity_second_t)*__entity->num_second);
+		__entity->bus[i].second_malloced = true;
+
+		for(int j=0; j<__entity->num_second; j++) {
+//			printf("\t\tallocating changes\n");
+			if((__entity->bus[i].second[j].spi_write_out = (unsigned char*)malloc(__entity->bus[i].size_spi_write_out))==NULL) {
+				printf("allocating memory for seconds spi_write_out (full images) failed.");
+				return -1;
+			}
+			memset(__entity->bus[i].second[j].spi_write_out, 0, __entity->bus[i].size_spi_write_out);
+			__entity->bus[i].second[j].spi_write_out_malloced = true;
+		}
+	}
 
 	//At first write out the full seconds in the corresponding bus
 	for(int i=0; i<(__entity->num_second); i++) {
-		uint8_t bus_id = (uint8_t)__data[readBytes];
-		readBytes++;
+		for(int m=0; m<(__entity->num_led); m++) {
+			uint8_t bus_id = (uint8_t)__data[readBytes];
+			readBytes++;
 
-		uint8_t group_id = (uint8_t)__data[readBytes];
-		readBytes++;
+			uint8_t group_id = (uint8_t)__data[readBytes];
+			readBytes++;
 
-		uint16_t led_id = (uint16_t)__data[readBytes];
-		readBytes += 2;
+			uint16_t led_id = ntohs(*(uint16_t*)&__data[readBytes]);
+			readBytes += 2;
 
-		for(int j=0; j<(__entity->num_bus); j++) {
-			if(__entity->bus[j].bus_id==bus_id) {
-				for(int k=0; k<(__entity->bus[j].num_group); k++) {
-					if(__entity->bus[j].group[k].group_id==group_id) {
-						uint16_t offset = __entity->bus[j].group[k].led_offset[led_id];
-						memcpy((void*)&(__entity->bus[j].second[i].spi_write_out[offset]), (void*)&__data[readBytes], 4);
-						readBytes += 4;
-						break;
+			for(int j=0; j<(__entity->num_bus); j++) {
+				if(__entity->bus[j].bus_id==bus_id) {
+					for(int k=0; k<(__entity->bus[j].num_group); k++) {
+						if(__entity->bus[j].group[k].group_id==group_id) {
+							uint16_t offset = __entity->bus[j].group[k].led_offset[led_id];
+							//printf("\t\t\toffset: %d\t\treadBytes: %d\n", offset, readBytes);
+							//printf("\t\t\toffset: %p\treadBytes: %p\n", &__entity->bus[j].second[i].spi_write_out[offset], &__data[readBytes]);
+							//fflush(stdout);
+							memcpy((void*)&__entity->bus[j].second[i].spi_write_out[offset], (void*)&__data[readBytes], 4);
+							readBytes += 4;
+							break;
+						}
 					}
+					break;
 				}
-				break;
 			}
 		}
 	}
 
 	//Allocate space for all frames in all busses
 	for(int i=0; i<__entity->num_bus; i++) {
+		printf("\tallocating frames\n");
 		if((__entity->bus[i].frame=(entity_frame_t*)malloc(sizeof(entity_frame_t)*__entity->num_frame))<0) {
 			perror("entity_write_effect malloc frame");
 			return -1;
 		}
-		if(memset(__entity->bus[i].frame, 0, sizeof(entity_frame_t)*__entity->num_frame)<0) {
-			perror("entity_write_effect, memset frame");
-			return -1;
-		}
+		memset(__entity->bus[i].frame, 0, sizeof(entity_frame_t)*__entity->num_frame);
+		__entity->bus[i].frame_malloced = true;
 	}
 
+	uint16_t frames_with_changes = 0;
+	int32_t total_changes = 0;
 	//Loop over all frames
 	for(int i=0; i<__entity->num_frame; i++) {
 		//Read the changes of the current frame
-		uint16_t num_changes = (uint16_t)__data[readBytes];
+		uint16_t num_changes = ntohs(*(uint16_t*)&__data[readBytes]);
 		readBytes += 2;
 
 		if(num_changes>0) {
+			frames_with_changes ++;
+			total_changes += num_changes;
+
 			//Loop over all changes in this frame
+			//We need to loop 2 times here
+			//First iteration: count which changes belong to which bus
+			int readBytesSave = readBytes;
 			for(int j=0; j<num_changes; j++) {
 				//Read values of current change
 				uint8_t bus_id = (uint8_t)__data[readBytes];
-				readBytes++;
-				uint8_t group_id = (uint8_t)__data[readBytes];
-				readBytes++;
-				uint16_t led_id = (uint16_t)__data[readBytes];
-				readBytes += 2;
+				readBytes += 8;
 
 				//Loop over all busses
 				for(int k=0; k<__entity->num_bus; k++) {
 					if(__entity->bus[k].bus_id==bus_id) {
 						//Increment the number of changes in this bus in the current frame
 						__entity->bus[k].frame[i].num_change++;
+						break;
+					}
+				}
+			}
 
+			//Second iteration: malloc and write data
+			readBytes = readBytesSave;
+			for(int j=0; j<num_changes; j++) {
+				//Read values of current change
+				uint8_t bus_id = (uint8_t)__data[readBytes];
+				readBytes++;
+				uint8_t group_id = (uint8_t)__data[readBytes];
+				readBytes++;
+				uint16_t led_id = ntohs(*(uint16_t*)&__data[readBytes]);
+				readBytes += 2;
+
+				//Loop over all busses
+				for(int k=0; k<__entity->num_bus; k++) {
+					if(__entity->bus[k].bus_id==bus_id) {
 						//Get heap space for changes
-						//If already allocate realloc, else just allocate one
-						if(__entity->bus[k].frame[i].change!=NULL) {
-							if((__entity->bus[k].frame[i].change=(entity_change_t*)realloc(__entity->bus[k].frame, sizeof(entity_change_t)*__entity->bus[k].frame[i].num_change))<0) {
-								perror("entity_write_effect realloc");
-								return -1;
-							}
-						} else {
-							if((__entity->bus[k].frame[i].change=(entity_change_t*)malloc(sizeof(entity_change_t)))<0) {
-								perror("entity_write_effect malloc");
-								return -1;
-							}
+						if((__entity->bus[k].frame[i].change=(entity_change_t*)malloc(sizeof(entity_change_t)*__entity->bus[k].frame[i].num_change))<0) {
+							perror("entity_write_effect malloc");
+							return -1;
 						}
+						__entity->bus[k].frame[i].change_malloced = true;
 
 						//Loop over all groups
 						for(int m=0; m<__entity->bus[k].num_group; m++) {
@@ -246,6 +324,10 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 
 	__entity->effects_init = true;
 
+	printf("\t\tnum_frames_with_changes: %d\n", frames_with_changes);
+	printf("\t\tnum_changes: %d\n", total_changes);
+	fflush(stdout);
+
 	if(pthread_mutex_unlock(&(__entity->mutex))<0) {
 		perror("entity_write_effects pthread_mutex_unlock");
 		return -1;
@@ -257,18 +339,40 @@ int entity_write_effects(entity_t* __entity, char* __data) {
 static int entity_free_effect(entity_t* __entity) {
 	__entity->effects_init = false;
 
-	for(int i=0; i<__entity->num_bus; i++) {
-		for(int j=0; j<__entity->num_frame; j++) {
-			free(__entity->bus[i].frame[j].change);
+	if(__entity->bus_malloced) {
+		for(int i=0; i<__entity->num_bus; i++) {
+			if(__entity->bus[i].frame_malloced) {
+				for(int j=0; j<__entity->num_frame; j++) {
+					if(__entity->bus[i].frame[j].change_malloced) {
+						free(__entity->bus[i].frame[j].change);
+						__entity->bus[i].frame[j].change = NULL;
+						__entity->bus[i].frame[j].change_malloced = false;
+					}
+				}
+				free(__entity->bus[i].frame);
+				__entity->bus[i].frame = NULL;
+				__entity->bus[i].frame_malloced = false;
+			}
+
+			if(__entity->bus[i].second_malloced) {
+				for(int j=0; j<__entity->num_second; j++) {
+					if(__entity->bus[i].second[j].spi_write_out_malloced) {
+						free(__entity->bus[i].second[j].spi_write_out);
+						__entity->bus[i].second[j].spi_write_out = NULL;
+						__entity->bus[i].second[j].spi_write_out_malloced = false;
+					}
+				}
+				free(__entity->bus[i].second);
+				__entity->bus[i].second = NULL;
+				__entity->bus[i].second_malloced = false;
+			}
 		}
-		free(__entity->bus[i].frame);
-		__entity->bus[i].frame = NULL;
-		memset(__entity->bus[i].second, 0, __entity->bus[i].size_spi_write_out);
 	}
 
-	memset(&(__entity->num_second), 0, sizeof(__entity->num_second));
-	memset(&(__entity->fps), 0, sizeof(__entity->fps));
-	memset(&(__entity->num_frame), 0, sizeof(__entity->num_frame));
+	__entity->num_frame = 0;
+	__entity->fps = 0;
+	__entity->nsec = 0;
+	__entity->num_second = 0;
 
 	return 0;
 }
@@ -279,13 +383,13 @@ int entity_free(entity_t* __entity) {
 		return -1;
 	}
 
-	if(entity_free_config(__entity)<0) {
-		printf("free_config() failed.");
+	if(entity_free_effect(__entity)<0) {
+		printf("free_effect() failed.");
 		return -1;
 	}
 
-	if(entity_free_effect(__entity)<0) {
-		printf("free_effect() failed.");
+	if(entity_free_config(__entity)<0) {
+		printf("free_config() failed.");
 		return -1;
 	}
 

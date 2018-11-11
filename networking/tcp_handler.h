@@ -7,6 +7,11 @@
 #include <pthread.h>
 #include <semaphore.h>
 
+#define MESSAGE_HEADER_LENGTH		8
+#define MESSAGE_HEADER_SECRET_OFFSET	0
+#define MESSAGE_HEADER_ID_OFFSET	2
+#define MESSAGE_HEADER_DATA_OFFSET	4
+
 #define MESSAGE_NULL		0
 #define MESSAGE_ID              1
 #define MESSAGE_CONFIG          2
@@ -19,10 +24,10 @@
 #define MESSAGE_COLOR           9
 #define MESSAGE_RESEND		10
 #define MESSAGE_READY		11
-
+#define MESSAGE_HEARTBEAT	12
 
 typedef struct {
-        uint8_t         id;
+        uint16_t         id;
         int32_t		total_data_length;
         int32_t         total_data_received;
         char*           data;
@@ -49,6 +54,11 @@ typedef struct {
 
 	//Ref to entity
 	entity_t*	entity;
+
+	//Heartbeat bool
+	pthread_mutex_t	heartbeat_mutex;
+	bool		heartbeat_send_issued;
+	bool		heartbeat_received;
 }tcp_handler_args_t;
 
 int tcp_handler_init();

@@ -4,6 +4,7 @@
 #include "entity/entity.h"
 
 #include <stdint.h>
+#include <stdbool.h>
 
 int threads_init();
 
@@ -19,5 +20,6 @@ int threads_start_tcp(int __sockfd, entity_t* __entity,
         void (*__entity_pause)(void),
         void (*__entity_show)(void));
 int threads_exit_tcp();
+int threads_cleanup_tcp();
 
 #endif /* THREADS_H */

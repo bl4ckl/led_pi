@@ -17,14 +17,14 @@ typedef struct {
         uint8_t         num_led;
 	//array of offsets of the corresponding led in the spi_write_out[]
 	//of the corresponding bus
+	bool		led_offset_malloced;
         uint16_t*       led_offset;
 }entity_group_t;
 
 //entity_second (Full Image)
 typedef struct {
-	//size of spi_write_out
-        uint16_t        size_spi_write_out;
 	//byte[] to write out to the spi bus
+	bool		spi_write_out_malloced;
         unsigned char*	spi_write_out;
 }entity_second_t;
 
@@ -40,6 +40,7 @@ typedef struct {
 typedef struct {
 	//total number of led changes in this frame
         uint16_t        	num_change;
+	bool			change_malloced;
         entity_change_t*	change;
 }entity_frame_t;
 
@@ -51,15 +52,19 @@ typedef struct {
         uint8_t        	 	bus_id;
 	//total number of groups on this bus
         uint8_t		        num_group;
+	bool			group_malloced;
         entity_group_t*		group;
 	//total number of leds in this bus
         uint16_t		num_led;
 	//size of spi_write_out = num_led * 4
 	uint16_t		size_spi_write_out;
 	//byte[] to write out to the spi bus
+	bool			spi_write_out_malloced;
         unsigned char*		spi_write_out;
 	//struct to hold spi_write_out for the full seconds / images
+	bool			second_malloced;
         entity_second_t*	second;
+	bool			frame_malloced;
         entity_frame_t*   	frame;
 }entity_bus_t;
 
@@ -74,7 +79,10 @@ typedef struct {
 	bool		effects_init;
 	//total number of different bus in the system
         uint16_t        num_bus;
+	bool		bus_malloced;
         entity_bus_t*   bus;
+	//total number of leds
+	uint16_t	num_led;
 	//total number of seconds
         uint16_t        num_second;
 	//frames per second

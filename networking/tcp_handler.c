@@ -1,5 +1,8 @@
 #include "tcp_handler.h"
+#include "../utility.h"
 
+#include <errno.h>
+#include <netinet/in.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -12,7 +15,7 @@
 static int identify_message(tcp_handler_message_t* __message, char __buffer[1024]);
 static void reset_message(tcp_handler_message_t* __message, char __buffer[1024]);
 static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* __message);
-static void send_to_server(tcp_handler_args_t* __args, uint8_t __message_id, char* data);
+static void send_to_server(tcp_handler_args_t* __args, uint16_t __message_id, char* data);
 
 
 static bool init = true;
@@ -46,6 +49,7 @@ int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd,
 	__args->entity_pause = __entity_pause;
 	__args->entity_show = __entity_show;
 	__args->entity = __entity;
+	__args->heartbeat_received = true;
 
 	return 0;
 }
@@ -79,7 +83,7 @@ void* tcp_handler(void* __args) {
 	tcp_handler_message_t message;
 	memset(&message, 0, sizeof(tcp_handler_message_t));
 
-	char buffer[1024];
+	char buffer[1024*8];
 	memset(&buffer[0], 0, sizeof(buffer));
 
 	bool message_identified = false;
@@ -97,6 +101,13 @@ void* tcp_handler(void* __args) {
 			pthread_exit(NULL);
 		}
 
+/*		//Check for heartbeat issued
+		pthread_mutex_lock(&args->heartbeat_mutex);
+		if(args->heartbeat_send_issued) {
+			send_to_server(args, MESSAGE_HEARTBEAT, NULL);
+		}
+		pthread_mutex_unlock(&args->heartbeat_mutex);
+*/
 		//Process the message
 		if(!message_identified) {
 		        message.total_data_received = recv(args->sockfd, &buffer[0], sizeof(buffer), 0);
@@ -104,25 +115,35 @@ void* tcp_handler(void* __args) {
 				if(identify_message(&message, &buffer[0])<0) {
 					perror("tcp_handler identify_message");
 				} else {
-					printf("tcp_handler:\tmessage identified:\n\t\tid: %d\n\t\ttotal_data_length: %d\n\t\ttotal_data_received: %d\n", message.id, message.total_data_length, message.total_data_received);
-					fflush(stdout);
-					message_identified = true;
+					if(message.id != MESSAGE_HEARTBEAT) {
+						printf("tcp_handler:\tmessage identified:\n\t\tid: %d\n\t\ttotal_data_length: %d\n\t\ttotal_data_received: %d\n", message.id, message.total_data_length, message.total_data_received);
+						fflush(stdout);
+						message_identified = true;
+					}
 				}
+			} else if(message.total_data_received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+
 			} else {
 				perror("tcp_handler message recv < 0");
 			}
 		} else {
-			int32_t data_received = recv(args->sockfd, &buffer[0], sizeof(buffer), 0);
-			if(data_received < 0) {
-				perror("tcp_handler recv -1");
-				fflush(stdout);
-				reset_message(&message, &buffer[0]);
-				send_to_server(args, MESSAGE_RESEND, NULL);
-			} else {
-				memcpy(&message.data[message.total_data_received], &buffer[0], data_received);
-				memset(&buffer[0], 0, sizeof(buffer));
-		        	message.total_data_received += data_received;
-			}
+			do {
+				int32_t data_received = recv(args->sockfd, &buffer[0], sizeof(buffer), 0);
+				if(data_received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+
+				}
+				else if(data_received < 0) {
+					perror("tcp_handler recv -1");
+					//reset_message(&message, &buffer[0]);
+					//send_to_server(args, MESSAGE_RESEND, NULL);
+				} else {
+					memcpy(&message.data[message.total_data_received], &buffer[0], data_received);
+					memset(&buffer[0], 0, sizeof(buffer));
+		       		 	message.total_data_received += data_received;
+					printf("\t\ttotal_data_received: %d\n", message.total_data_received);
+					fflush(stdout);
+				}
+			} while(message.total_data_received < message.total_data_length);
 		}
 
 		if((message.id != MESSAGE_NULL) && (message.total_data_length == message.total_data_received)) {
@@ -145,13 +166,20 @@ void* tcp_handler(void* __args) {
 
 static int identify_message(tcp_handler_message_t* __message, char __buffer[1024]) {
 	//A message needs to be atleast 5 bytes
-	if(__message->total_data_received >= 5) {
-		//First byte represents message_id
-		__message->id = (uint8_t)__buffer[0];
+	if(__message->total_data_received >= MESSAGE_HEADER_LENGTH) {
+		if((uint16_t)42 != ntohs(*(uint16_t*)&__buffer[MESSAGE_HEADER_SECRET_OFFSET])) {
+			//print_bits(2, &__buffer[0]);
+			reset_message(__message, &__buffer[0]);
+			perror("tcp_handler identify_message secret");
+			return -1;
+		}
+		//First 2 bytes represents message_id
+		__message->id = ntohs(*(uint16_t*)&__buffer[MESSAGE_HEADER_ID_OFFSET]);
 		//Next 4 bytes is message length
-		__message->total_data_length = (uint32_t)__buffer[1];
+		__message->total_data_length = ntohl(*(int32_t*)&__buffer[MESSAGE_HEADER_DATA_OFFSET]);
+		//print_bits(4, &__buffer[MESSAGE_HEADER_DATA_OFFSET]);
 		//Substract the 5 bytes we already read
-		__message->total_data_received -= 5;
+		__message->total_data_received -= MESSAGE_HEADER_LENGTH;
 		//Malloc heap space for the rest of the data
 		if((__message->data=(char*)malloc(__message->total_data_length))==NULL) {
 			reset_message(__message, &__buffer[0]);
@@ -159,12 +187,12 @@ static int identify_message(tcp_handler_message_t* __message, char __buffer[1024
 			return -1;
 		}
 		//Copy the received data from buffer
-		memcpy(__message->data, &__buffer[5], __message->total_data_received);
+		memcpy(__message->data, &__buffer[MESSAGE_HEADER_LENGTH], __message->total_data_received);
 		//Reset the buffer again
 		memset(&__buffer[0], 0, sizeof(*__buffer));
 	} else {
 		reset_message(__message, &__buffer[0]);
-		perror("tcp_handler identify_message total_data_received < 5");
+		perror("tcp_handler identify_message total_data_received < MESSAGE_HEADER_LENGTH");
 		return -1;
 	}
 
@@ -196,7 +224,7 @@ static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* _
 			}
 			break;
 		case MESSAGE_TIME:
-			__args->entity_timesync((uint32_t)*(__message->data));
+			__args->entity_timesync(ntohl(*(uint32_t*)&__message->data));
 			break;
 		case MESSAGE_PLAY:
 			__args->entity_play();
@@ -211,24 +239,33 @@ static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* _
 			break;
 		case MESSAGE_COLOR:
 			break;
+		case MESSAGE_HEARTBEAT:
+			pthread_mutex_lock(&__args->heartbeat_mutex);
+			__args->heartbeat_received = true;
+			pthread_mutex_unlock(&__args->heartbeat_mutex);
+			break;
 	}
 }
 
-static void send_to_server(tcp_handler_args_t* __args, uint8_t __message_id, char* data) {
-	uint32_t send_buffer_length = 5;
-	uint32_t data_length = 5;
+static void send_to_server(tcp_handler_args_t* __args, uint16_t __message_id, char* data) {
+	uint32_t send_buffer_length = 8;
+	uint32_t data_length = 0;
 	if(&data[0] != NULL) {
 		send_buffer_length += (uint32_t)strlen(data);
-		data_length = (uint32_t)strlen(data);
+		data_length = htonl((uint32_t)strlen(data));
 	}
 	char send_buffer[send_buffer_length];
 
-	send_buffer[0] = __message_id;
+	uint16_t secret = htons(42);
+	memcpy(&send_buffer[0], &secret, sizeof(uint16_t));
 
-	memcpy(&send_buffer[1], &data_length, sizeof(uint32_t));
+	uint16_t message_id  = htons(__message_id);
+	memcpy(&send_buffer[2], &message_id, sizeof(uint16_t));
+
+	memcpy(&send_buffer[4], &data_length, sizeof(uint32_t));
 
 	if(&data[0] != NULL) {
-		memcpy(&send_buffer[5], &data[0], strlen(data));
+		memcpy(&send_buffer[8], &data[0], strlen(data));
 	}
 	send(__args->sockfd, &send_buffer[0], sizeof(send_buffer), 0);
 }

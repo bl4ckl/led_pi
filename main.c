@@ -22,6 +22,9 @@
 #include <time.h>
 
 void entity_black(void);
+void entity_show(void);
+void get_server_ip();
+int init_networking();
 
 //SPI
 #define CHANNEL 0
@@ -39,6 +42,7 @@ static entity_timer_t timer_heartbeat;
 static entity_timer_t timer_play;
 static entity_timer_t timer_show;
 
+
 void intHandler(int signalType) {
 	cleanup();
 	exit(1);
@@ -51,8 +55,12 @@ void cleanup() {
 	free((void*)entity);
 }
 
+void tcp_wrapper(int dummy) {
+	raise(TIME_SIGNAL_HIGHEST);
+}
+
 void tcp_handler_main(int dummy) {
-	threads_execute_tcp();
+	threads_execute_tcp(false);
 }
 
 void timer_handler(int __signal, siginfo_t* __sig_info, void* __dummy) {
@@ -61,7 +69,22 @@ void timer_handler(int __signal, siginfo_t* __sig_info, void* __dummy) {
 	if(*current_timer == timer_play.timer_id) {
 
 	} else if(*current_timer == timer_heartbeat.timer_id) {
+//		printf("Issueing heartbeat\n");
+		if(threads_execute_tcp(true)<0) {
+			timers_stop(&timer_heartbeat);
+			threads_exit_tcp();
+			threads_cleanup_tcp();
+			close(tcpsockfd);
 
+			while(init_networking()<0);
+			//Get the server ip
+			get_server_ip();
+
+			//start tcp handling
+			threads_start_tcp(tcpsockfd, (entity_t*)entity, NULL, NULL, NULL, entity_show);
+			tcp_client_start(tcpsockfd, server_ip, SERVER_PORT);
+			timers_start(&timer_heartbeat);
+		}
 	} else if(*current_timer == timer_show.timer_id) {
 		entity_black();
 	} else if(*current_timer == timer_broadcast.timer_id) {
@@ -90,16 +113,17 @@ int init() {
 
 	//Setup entity
 	entity = malloc(sizeof(entity_t));
+	memset((entity_t*)entity, 0, sizeof(entity_t));
 	entity->nsec=25000000;
 
 	//Setup Timers
 	memset(&timer_broadcast, 0, sizeof(timer_broadcast));
-	timer_broadcast.timer_spec.it_value.tv_sec = TIME_BROADCAST_SEC;
-	timer_broadcast.timer_spec.it_interval = timer_broadcast.timer_spec.it_value;
+	timer_broadcast.timer_spec.it_value.tv_nsec = 1;
+	timer_broadcast.timer_spec.it_interval.tv_sec = TIME_BROADCAST_SEC;
 	timers_init(&timer_broadcast, TIME_SIGNAL_UNIMPORTANT, timer_handler);
 
 	memset(&timer_heartbeat, 0, sizeof(timer_heartbeat));
-	timer_heartbeat.timer_spec.it_value.tv_sec = TIME_HEARTBEAT_NSEC;
+	timer_heartbeat.timer_spec.it_value.tv_nsec = TIME_HEARTBEAT_NSEC;
 	timer_heartbeat.timer_spec.it_interval = timer_heartbeat.timer_spec.it_value;
 	timers_init(&timer_heartbeat, TIME_SIGNAL_HIGH , timer_handler);
 
@@ -108,24 +132,12 @@ int init() {
 	timers_init(&timer_show, TIME_SIGNAL_UNIMPORTANT, timer_handler);
 
 	memset(&timer_play, 0, sizeof(timer_play));
-	timers_init(&timer_play, TIME_SIGNAL_HIGHEST, timer_handler);
+	timers_init(&timer_play, TIME_SIGNAL_REALTIME, timer_handler);
 
 
 	//Setup SPI
 	if(spi_setup(&spifd, CHANNEL, SPI_SPEED)<0) {
 		perror("init spi_setup");
-		res = -1;
-	}
-
-	//Create UDP Socket
-	if(udp_client_init(SERVER_PORT)<0) {
-		perror("init udp_client_init");
-		res = -1;
-	}
-
-	//Create TCP Socket
-	if(tcp_client_init(&tcpsockfd, tcp_handler_main)<0) {
-		perror("init tcp_client_init");
 		res = -1;
 	}
 
@@ -136,6 +148,26 @@ int init() {
 	}
 
 	return res;
+}
+
+int init_networking() {
+	//Create UDP Socket
+	if(udp_client_init(SERVER_PORT)<0) {
+		perror("init udp_client_init");
+		return -1;
+	}
+
+	//Create TCP Socket
+	if(tcp_client_init(&tcpsockfd, tcp_wrapper)<0) {
+		perror("init tcp_client_init");
+		return -1;
+	}
+	struct sigaction tcp_queue;
+	memset(&tcp_queue, 0, sizeof(struct sigaction));
+	tcp_queue.sa_handler = tcp_handler_main;
+	sigaction(TIME_SIGNAL_HIGHEST, &tcp_queue, NULL);
+
+	return 0;
 }
 
 void get_server_ip() {
@@ -166,6 +198,8 @@ int main() {
 		system("sleep 30s; shutdown -r");
 	}
 
+	while (init_networking()<0);
+
 	//At first get the mac id
 	get_mac("wlan0", (unsigned char*)((entity_t*)entity)->id);
 	printf("ID: %s.\n", ((entity_t*)entity)->id);
@@ -176,7 +210,7 @@ int main() {
 	//start tcp handling
 	threads_start_tcp(tcpsockfd, (entity_t*)entity, NULL, NULL, NULL, entity_show);
 	tcp_client_start(tcpsockfd, server_ip, SERVER_PORT);
-	//timers_start(&timer_heartbeat);
+//	timers_start(&timer_heartbeat);
 
 	//Wait for messages
 	for(;;) {

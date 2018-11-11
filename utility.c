@@ -42,3 +42,9 @@ void print_bits(size_t const  size, void const * const ptr)
     }
     puts("");
 }
+
+uint16_t btois(void const* const ptr)
+{
+	//uint16_t res = ptr[0] + ptr[1];
+	return 1;
+}

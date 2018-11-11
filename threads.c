@@ -163,6 +163,17 @@ int threads_cleanup_entity() {
 }
 
 int threads_execute_tcp() {
+/*	if(__heartbeat) {
+		pthread_mutex_lock(&tcp_handler_args.heartbeat_mutex);
+		if(!tcp_handler_args.heartbeat_received) {
+			perror("threads_execute_tcp no heartbeat");
+			pthread_mutex_unlock(&tcp_handler_args.heartbeat_mutex);
+			return -1;
+		}
+		tcp_handler_args.heartbeat_received = false;
+		tcp_handler_args.heartbeat_send_issued = true;
+		pthread_mutex_unlock(&tcp_handler_args.heartbeat_mutex);
+	}*/
 	if(sem_post(&(tcp_handler_args.tcp_sem))<0) {
 		perror("threads_execute_tcp sem_post");
 		return -1;
@@ -219,7 +230,7 @@ int threads_exit_tcp() {
 	}
 
 	//Execute all threads so they can exit
-	threads_execute_tcp();
+	threads_execute_tcp(false);
 
 	//Wait for all threads to exit
 	if(pthread_join(tcp_thread, NULL)<0) {
