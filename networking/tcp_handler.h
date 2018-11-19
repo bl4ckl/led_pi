@@ -56,6 +56,7 @@ typedef struct {
 	void		(*entity_play)(void);
 	void		(*entity_pause)(void);
 	void		(*entity_show)(void);
+	void		(*entity_color)(uint8_t*);
 
 	//Ref to entity
 	entity_t*	entity;
@@ -73,7 +74,8 @@ int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd,
 	void (*__entity_effects_post)(void),
         void (*__entity_play)(void),
         void (*__entity_pause)(void),
-        void (*__entity_show)(void),  entity_t* __entity);
+        void (*__entity_show)(void),
+	void (*__entity_color)(uint8_t*), entity_t* __entity);
 int tcp_handler_args_destroy(tcp_handler_args_t* __args);
 void* tcp_handler(void* __args);
 

@@ -19,7 +19,8 @@ int threads_start_tcp(int __sockfd, entity_t* __entity,
 	void (*__entity_effects_post)(void),
         void (*__entity_play)(void),
         void (*__entity_pause)(void),
-        void (*__entity_show)(void));
+        void (*__entity_show)(void),
+	void (*__entity_color)(uint8_t*));
 int threads_tcp_update_sockfd(int __sockfd);
 int threads_exit_tcp();
 

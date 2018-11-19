@@ -419,15 +419,15 @@ int entity_free(entity_t* __entity) {
 	return 0;
 }
 
-int entity_full(entity_t* __entity, unsigned char color[4]) {
+int entity_full(entity_t* __entity, unsigned char* __color) {
         if((__entity == NULL) || (__entity->bus == NULL)) {
                 unsigned char data[2006];
                 memset(&data[0], 0, 6);
-		for(int i=0; i<sizeof(data)-6; i++) {
-	                memset(&data[6+i], 0b11100000 | color[0]>>3, 1);
-	                memset(&data[7+i], color[1], 1);
-	                memset(&data[8+i], color[2], 1);
-	                memset(&data[9+i], color[3], 1);
+		for(int i=0; i<sizeof(data)-6; i+=4) {
+	                memset(&data[6+i], 0b11100000 | __color[0]>>3, 1);
+	                memset(&data[7+i], __color[1], 1);
+	                memset(&data[8+i], __color[2], 1);
+	                memset(&data[9+i], __color[3], 1);
 		}
 		for(int i=0; i<8;i++) {
 	                spi_write(i, &data[0], sizeof(data));
@@ -436,11 +436,11 @@ int entity_full(entity_t* __entity, unsigned char color[4]) {
                 for(int i=0;i<__entity->num_bus;i++) {
                         unsigned char data[__entity->bus[i].size_spi_write_out];
                         memset(&data[0], 0, 6);
-           		for(int j=0; j<sizeof(data)-6; j++) {
-		                memset(&data[6+j], color[0], 1);
-		                memset(&data[7+j], color[1], 1);
-	        	        memset(&data[8+j], color[2], 1);
-	                	memset(&data[9+j], color[3], 1);
+           		for(int j=0; j<sizeof(data)-6; j+=4) {
+		                memset(&data[6+j], __color[0], 1);
+		                memset(&data[7+j], __color[1], 1);
+	        	        memset(&data[8+j], __color[2], 1);
+	                	memset(&data[9+j], __color[3], 1);
 			}
                         spi_write(__entity->bus[i].bus_id, &data[0], sizeof(data));
                 }

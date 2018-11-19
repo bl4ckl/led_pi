@@ -228,7 +228,7 @@ void entity_show(void) {
 	if(!playing) {
 		unsigned char color[4];
 	        memset(&color[0], 0xFF, 4);
-       		entity_full(NULL, color);
+       		entity_full(NULL, &color[0]);
 
 		timers_start(&timer_show);
 	} else {
@@ -236,11 +236,16 @@ void entity_show(void) {
 	}
 }
 
+void entity_color(uint8_t* __color) {
+	printf("G: %d, B: %d, R: %d\n", __color[1], __color[2], __color[3]);
+	entity_full(NULL, &__color[0]);
+}
+
 void entity_black(void) {
 	if(!playing) {
 		unsigned char color[4];
         	memset(&color[0], 0, 4);
-        	entity_full(NULL, color);
+        	entity_full(NULL, &color[0]);
 	} else {
 		perror("main entity_black black while playing");
 	}
@@ -264,7 +269,7 @@ int main() {
 	get_server_ip();
 
 	//start tcp handling
-	threads_start_tcp(tcpsockfd, (entity_t*)entity, entity_timestamp, entity_config_effects_pre, entity_effects_post, entity_play, entity_pause, entity_show);
+	threads_start_tcp(tcpsockfd, (entity_t*)entity, entity_timestamp, entity_config_effects_pre, entity_effects_post, entity_play, entity_pause, entity_show, entity_color);
 	tcp_client_start(tcpsockfd, server_ip, SERVER_PORT);
 //	timers_start(&timer_heartbeat);
 

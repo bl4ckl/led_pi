@@ -198,7 +198,8 @@ int threads_start_tcp(int __sockfd, entity_t* __entity,
         void (*__entity_effects_post)(void),
 	void (*__entity_play)(void),
 	void (*__entity_pause)(void),
-	void (*__entity_show)(void)) {
+	void (*__entity_show)(void),
+	void (*__entity_color)(uint8_t*)) {
 	//Some checks to ensure we can proceed
 	if(!init) {
 		perror("threads_start_tcp init false");
@@ -210,7 +211,7 @@ int threads_start_tcp(int __sockfd, entity_t* __entity,
 	}
 
 	//Init args ands start thread
-	if(tcp_handler_args_init(&tcp_handler_args, __sockfd, __entity_timesync, __entity_config_effects_pre, __entity_effects_post, __entity_play, __entity_pause, __entity_show, __entity)<0) {
+	if(tcp_handler_args_init(&tcp_handler_args, __sockfd, __entity_timesync, __entity_config_effects_pre, __entity_effects_post, __entity_play, __entity_pause, __entity_show, __entity_color,__entity)<0) {
 		perror("threads_start_tcp tpc_handler_args_init");
 		return -1;
 	}

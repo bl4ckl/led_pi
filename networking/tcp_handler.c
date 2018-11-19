@@ -31,7 +31,8 @@ int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd,
         void (*__entity_effects_post)(void),
 	void (*__entity_play)(void),
 	void (*__entity_pause)(void),
-	void (*__entity_show)(void),  entity_t* __entity) {
+	void (*__entity_show)(void),
+	void (*__entity_color)(uint8_t*), entity_t* __entity) {
 
 	memset(__args, 0, sizeof(tcp_handler_args_t));
 
@@ -60,6 +61,7 @@ int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd,
 	__args->entity_play = __entity_play;
 	__args->entity_pause = __entity_pause;
 	__args->entity_show = __entity_show;
+	__args->entity_color = __entity_color;
 	__args->entity = __entity;
 	__args->heartbeat_received = true;
 
@@ -209,12 +211,15 @@ void* tcp_handler(void* __args) {
 						}
 					}
 				}
-				if(message.total_data_received == message.total_data_length) {
+				if(message.total_data_received >= message.total_data_length) {
 					printf("\t\ttotal_data_received: %d\n", message.total_data_received);
 					fflush(stdout);
 
 					handle_message(args, &message);
 					reset_message(&message);
+					//send_to_server(args, MESSAGE_READY, NULL);
+					//printf("sent ready");
+					//fflush(stdout);
 				}
 				else {
 					perror("tcp_handler something horrible happened");
@@ -272,16 +277,7 @@ static int identify_message(tcp_handler_message_t* __message, char __buffer[1024
 static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* __message) {
 	switch(__message->id) {
 		case MESSAGE_ID:
-			if(pthread_mutex_lock(&(__args->entity->mutex))<0) {
-				perror("tcp_handler handle_message pthread_mutex_lock");
-				send_to_server(__args, MESSAGE_RESEND, NULL);
-				break;
-			}
 			send_to_server(__args, MESSAGE_ID, __args->entity->id);
-			if(pthread_mutex_unlock(&(__args->entity->mutex))<0) {
-				perror("tcp_handler handle_message pthread_mutex_unlock");
-				break;
-			}
 			break;
 		case MESSAGE_CONFIG:
 			__args->entity_config_effects_pre();
@@ -314,8 +310,15 @@ static void handle_message(tcp_handler_args_t * __args, tcp_handler_message_t* _
 		case MESSAGE_SHOW:
 			__args->entity_show();
 			break;
-		case MESSAGE_COLOR:
+		case MESSAGE_COLOR: {
+			uint8_t color[4];
+			color[0] = __message->data[0];
+			color[1] = __message->data[1];
+			color[2] = __message->data[2];
+			color[3] = __message->data[3];
+			__args->entity_color(color);
 			break;
+}
 		case MESSAGE_HEARTBEAT:
 			pthread_mutex_lock(&__args->heartbeat_mutex);
 			__args->heartbeat_received = true;
