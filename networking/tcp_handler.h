@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include <semaphore.h>
 
 #define BUFFER_SIZE	8*1024
 
@@ -38,9 +37,6 @@ typedef struct {
 typedef struct {
 	//Mutex for struct access
 	pthread_mutex_t	mutex;
-
-	//The thread waits on this sem
-	sem_t		tcp_sem;
 
 	//If we want to exit, this becomes true
 	pthread_mutex_t	exit_mutex;

@@ -184,12 +184,6 @@ int threads_execute_tcp() {
 		tcp_handler_args.heartbeat_send_issued = true;
 		pthread_mutex_unlock(&tcp_handler_args.heartbeat_mutex);
 	}*/
-	if(sem_post(&(tcp_handler_args.tcp_sem))<0) {
-		perror("threads_execute_tcp sem_post");
-		return -1;
-	}
-
-	return 0;
 }
 
 int threads_start_tcp(int __sockfd, entity_t* __entity,

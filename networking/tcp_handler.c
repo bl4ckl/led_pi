@@ -10,7 +10,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <pthread.h>
-#include <semaphore.h>
+#include <unistd.h>
 
 static int identify_message(tcp_handler_message_t* __message, char __buffer[1024], int* __buffer_received);
 static void reset_message(tcp_handler_message_t* __message);
@@ -49,11 +49,6 @@ int tcp_handler_args_init(tcp_handler_args_t* __args, int __sockfd,
 		return -1;
 	}
 
-	if(sem_init(&(__args->tcp_sem), 0, 0)<0) {
-		perror("tcp_handler_args_init sem_init");
-		return -1;
-	}
-
 	__args->sockfd = __sockfd;
 	__args->entity_timesync = __entity_timesync;
 	__args->entity_config_effects_pre = __entity_config_effects_pre;
@@ -79,11 +74,6 @@ int tcp_handler_args_destroy(tcp_handler_args_t* __args) {
 	}
 	if(pthread_mutex_destroy(&(__args->heartbeat_mutex))<0) {
 		perror("tcp_handler_args_destroy pthread_mutex_destroy");
-		return -1;
-	}
-
-	if(sem_destroy(&(__args->tcp_sem))<0) {
-		perror("tcp_handler_args_destroy sem_destroy");
 		return -1;
 	}
 
@@ -124,8 +114,7 @@ void* tcp_handler(void* __args) {
 
 	//start main loop
 	while(1) {
-		//Wait for signal from main_thread
-		sem_wait(&args->tcp_sem);
+		usleep(100);
 
 		//Lock arg mutex
 		pthread_mutex_lock(&(args->mutex));
@@ -147,7 +136,7 @@ void* tcp_handler(void* __args) {
 		//Process incoming data
 		//Read everything from the socket and store it in buffer
 		//If there is previous data in the buffer, the new data gets added at the end of the old data
-	        recv_result = recv(args->sockfd, &buffer[buffer_received], sizeof(buffer)-buffer_received, 0);
+	        recv_result = recv(args->sockfd, &buffer[buffer_received], sizeof(buffer)-buffer_received, MSG_DONTWAIT);
 
 		//When we get -1 and it was a "real" error print it out
 		if(recv_result < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {

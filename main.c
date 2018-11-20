@@ -64,14 +64,6 @@ void cleanup() {
 	free((void*)entity);
 }
 
-void tcp_wrapper(int dummy) {
-	raise(TIME_SIGNAL_HIGHEST);
-}
-
-void tcp_handler_main(int dummy) {
-	threads_execute_tcp(false);
-}
-
 void timer_handler(int __signal, siginfo_t* __sig_info, void* __dummy) {
 	timer_t* current_timer = __sig_info->si_value.sival_ptr;
 
@@ -89,7 +81,7 @@ void timer_handler(int __signal, siginfo_t* __sig_info, void* __dummy) {
 			close(tcpsockfd);
 
 			//Create TCP Socket
-			if(tcp_client_init(&tcpsockfd, tcp_wrapper)<0) {
+			if(tcp_client_init(&tcpsockfd)<0) {
 				perror("init tcp_client_init");
 			} else {
 				timers_start(&timer_heartbeat);
@@ -170,14 +162,10 @@ int init_networking() {
 	}
 
 	//Create TCP Socket
-	if(tcp_client_init(&tcpsockfd, tcp_wrapper)<0) {
+	if(tcp_client_init(&tcpsockfd)<0) {
 		perror("init tcp_client_init");
 		return -1;
 	}
-	struct sigaction tcp_queue;
-	memset(&tcp_queue, 0, sizeof(struct sigaction));
-	tcp_queue.sa_handler = tcp_handler_main;
-	sigaction(TIME_SIGNAL_HIGHEST, &tcp_queue, NULL);
 
 	return 0;
 }
@@ -237,7 +225,6 @@ void entity_show(void) {
 }
 
 void entity_color(uint8_t* __color) {
-	printf("G: %d, B: %d, R: %d\n", __color[1], __color[2], __color[3]);
 	entity_full(NULL, &__color[0]);
 }
 

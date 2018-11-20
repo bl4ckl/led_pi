@@ -14,41 +14,13 @@
 #include <stdbool.h>
 #include <net/if.h>
 
-int tcp_client_init(int* __tcpsockfd, void (*__handler_function)) {
+int tcp_client_init(int* __tcpsockfd) {
     //Creating socket file descriptor
     int sockfd;
     if((sockfd  = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
         perror("tcp_client_init socket");
         return -1;
-    }
-
-    struct sigaction handler;
-    handler.sa_handler = __handler_function;
-
-    if (sigfillset(&handler.sa_mask) < 0)
-    {
-	perror("tcpsetuphandler sigfillset");
-	return -1;
-    }
-    handler.sa_flags = 0;
-
-    if (sigaction(SIGIO, &handler, 0) < 0)
-    {
-	perror("tcpsetuphandler sigaction");
-	return -1;
-    }
-
-    if (fcntl(sockfd, F_SETOWN, getpid()) < 0)
-    {
-	perror("tcpsetuphandler fcntl");
-	return -1;
-    }
-
-    if (fcntl(sockfd, F_SETFL, O_NONBLOCK | FASYNC) <0)
-    {
-	perror("tcpsetuphandler fcntl");
-	return -1;
     }
 
     *__tcpsockfd = sockfd;
